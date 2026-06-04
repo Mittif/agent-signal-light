@@ -1,0 +1,293 @@
+                                      1 ;--------------------------------------------------------
+                                      2 ; File Created by SDCC : free open source ISO C Compiler
+                                      3 ; Version 4.6.0 #16555 (MINGW64)
+                                      4 ;--------------------------------------------------------
+                                      5 	.module sys
+                                      6 	
+                                      7 	.optsdcc -mmcs51 --model-small
+                                      8 ;--------------------------------------------------------
+                                      9 ; Public variables in this module
+                                     10 ;--------------------------------------------------------
+                                     11 	.globl _mDelaymS
+                                     12 	.globl _mDelayuS
+                                     13 	.globl _CfgFsys
+                                     14 	.globl _U_IS_NAK
+                                     15 	.globl _U_TOG_OK
+                                     16 	.globl _U_SIE_FREE
+                                     17 	.globl _UIF_FIFO_OV
+                                     18 	.globl _UIF_SUSPEND
+                                     19 	.globl _UIF_TRANSFER
+                                     20 	.globl _UIF_BUS_RST
+                                     21 	.globl _TF0
+                                     22 	.globl _TR0
+                                     23 	.globl _IE_USB
+                                     24 	.globl _EA
+                                     25 	.globl _ET0
+                                     26 	.globl _UEP1_DMA_H
+                                     27 	.globl _UEP1_DMA_L
+                                     28 	.globl _UEP0_DMA_H
+                                     29 	.globl _UEP0_DMA_L
+                                     30 	.globl _UEP2_3_MOD
+                                     31 	.globl _UEP4_1_MOD
+                                     32 	.globl _UEP2_DMA_H
+                                     33 	.globl _UEP2_DMA_L
+                                     34 	.globl _USB_DEV_AD
+                                     35 	.globl _USB_CTRL
+                                     36 	.globl _USB_INT_EN
+                                     37 	.globl _UEP0_T_LEN
+                                     38 	.globl _UEP0_CTRL
+                                     39 	.globl _USB_RX_LEN
+                                     40 	.globl _USB_MIS_ST
+                                     41 	.globl _USB_INT_ST
+                                     42 	.globl _USB_INT_FG
+                                     43 	.globl _UEP3_T_LEN
+                                     44 	.globl _UEP3_CTRL
+                                     45 	.globl _UEP2_T_LEN
+                                     46 	.globl _UEP2_CTRL
+                                     47 	.globl _UEP1_T_LEN
+                                     48 	.globl _UEP1_CTRL
+                                     49 	.globl _UDEV_CTRL
+                                     50 	.globl _P3_DIR_PU
+                                     51 	.globl _P3_MOD_OC
+                                     52 	.globl _P3
+                                     53 	.globl _P1_DIR_PU
+                                     54 	.globl _P1_MOD_OC
+                                     55 	.globl _P1
+                                     56 	.globl _TH0
+                                     57 	.globl _TL0
+                                     58 	.globl _TMOD
+                                     59 	.globl _TCON
+                                     60 	.globl _IE_EX
+                                     61 	.globl _IE
+                                     62 	.globl _CLOCK_CFG
+                                     63 	.globl _WAKE_CTRL
+                                     64 	.globl _SAFE_MOD
+                                     65 	.globl _PCON
+                                     66 ;--------------------------------------------------------
+                                     67 ; special function registers
+                                     68 ;--------------------------------------------------------
+                                     69 	.area RSEG    (ABS,DATA)
+      000000                         70 	.org 0x0000
+                           000087    71 _PCON	=	0x0087
+                           0000A1    72 _SAFE_MOD	=	0x00a1
+                           0000A9    73 _WAKE_CTRL	=	0x00a9
+                           0000B9    74 _CLOCK_CFG	=	0x00b9
+                           0000A8    75 _IE	=	0x00a8
+                           0000E8    76 _IE_EX	=	0x00e8
+                           000088    77 _TCON	=	0x0088
+                           000089    78 _TMOD	=	0x0089
+                           00008A    79 _TL0	=	0x008a
+                           00008C    80 _TH0	=	0x008c
+                           000090    81 _P1	=	0x0090
+                           000092    82 _P1_MOD_OC	=	0x0092
+                           000093    83 _P1_DIR_PU	=	0x0093
+                           0000B0    84 _P3	=	0x00b0
+                           000096    85 _P3_MOD_OC	=	0x0096
+                           000097    86 _P3_DIR_PU	=	0x0097
+                           0000D1    87 _UDEV_CTRL	=	0x00d1
+                           0000D2    88 _UEP1_CTRL	=	0x00d2
+                           0000D3    89 _UEP1_T_LEN	=	0x00d3
+                           0000D4    90 _UEP2_CTRL	=	0x00d4
+                           0000D5    91 _UEP2_T_LEN	=	0x00d5
+                           0000D6    92 _UEP3_CTRL	=	0x00d6
+                           0000D7    93 _UEP3_T_LEN	=	0x00d7
+                           0000D8    94 _USB_INT_FG	=	0x00d8
+                           0000D9    95 _USB_INT_ST	=	0x00d9
+                           0000DA    96 _USB_MIS_ST	=	0x00da
+                           0000DB    97 _USB_RX_LEN	=	0x00db
+                           0000DC    98 _UEP0_CTRL	=	0x00dc
+                           0000DD    99 _UEP0_T_LEN	=	0x00dd
+                           0000E1   100 _USB_INT_EN	=	0x00e1
+                           0000E2   101 _USB_CTRL	=	0x00e2
+                           0000E3   102 _USB_DEV_AD	=	0x00e3
+                           0000E4   103 _UEP2_DMA_L	=	0x00e4
+                           0000E5   104 _UEP2_DMA_H	=	0x00e5
+                           0000EA   105 _UEP4_1_MOD	=	0x00ea
+                           0000EB   106 _UEP2_3_MOD	=	0x00eb
+                           0000EC   107 _UEP0_DMA_L	=	0x00ec
+                           0000ED   108 _UEP0_DMA_H	=	0x00ed
+                           0000EE   109 _UEP1_DMA_L	=	0x00ee
+                           0000EF   110 _UEP1_DMA_H	=	0x00ef
+                                    111 ;--------------------------------------------------------
+                                    112 ; special function bits
+                                    113 ;--------------------------------------------------------
+                                    114 	.area RSEG    (ABS,DATA)
+      000000                        115 	.org 0x0000
+                           0000A9   116 _ET0	=	0x00a9
+                           0000AF   117 _EA	=	0x00af
+                           0000EA   118 _IE_USB	=	0x00ea
+                           00008C   119 _TR0	=	0x008c
+                           00008D   120 _TF0	=	0x008d
+                           0000D8   121 _UIF_BUS_RST	=	0x00d8
+                           0000D9   122 _UIF_TRANSFER	=	0x00d9
+                           0000DA   123 _UIF_SUSPEND	=	0x00da
+                           0000DC   124 _UIF_FIFO_OV	=	0x00dc
+                           0000DD   125 _U_SIE_FREE	=	0x00dd
+                           0000DE   126 _U_TOG_OK	=	0x00de
+                           0000DF   127 _U_IS_NAK	=	0x00df
+                                    128 ;--------------------------------------------------------
+                                    129 ; overlayable register banks
+                                    130 ;--------------------------------------------------------
+                                    131 	.area REG_BANK_0	(REL,OVR,DATA)
+      000000                        132 	.ds 8
+                                    133 ;--------------------------------------------------------
+                                    134 ; internal ram data
+                                    135 ;--------------------------------------------------------
+                                    136 	.area DSEG    (DATA)
+                                    137 ;--------------------------------------------------------
+                                    138 ; overlayable items in internal ram
+                                    139 ;--------------------------------------------------------
+                                    140 	.area	OSEG    (OVR,DATA)
+                                    141 ;--------------------------------------------------------
+                                    142 ; indirectly addressable internal ram data
+                                    143 ;--------------------------------------------------------
+                                    144 	.area ISEG    (DATA)
+                                    145 ;--------------------------------------------------------
+                                    146 ; absolute internal ram data
+                                    147 ;--------------------------------------------------------
+                                    148 	.area IABS    (ABS,DATA)
+                                    149 	.area IABS    (ABS,DATA)
+                                    150 ;--------------------------------------------------------
+                                    151 ; bit data
+                                    152 ;--------------------------------------------------------
+                                    153 	.area BSEG    (BIT)
+                                    154 ;--------------------------------------------------------
+                                    155 ; paged external ram data
+                                    156 ;--------------------------------------------------------
+                                    157 	.area PSEG    (PAG,XDATA)
+                                    158 ;--------------------------------------------------------
+                                    159 ; uninitialized external ram data
+                                    160 ;--------------------------------------------------------
+                                    161 	.area XSEG    (XDATA)
+                                    162 ;--------------------------------------------------------
+                                    163 ; absolute external ram data
+                                    164 ;--------------------------------------------------------
+                                    165 	.area XABS    (ABS,XDATA)
+                                    166 ;--------------------------------------------------------
+                                    167 ; initialized external ram data
+                                    168 ;--------------------------------------------------------
+                                    169 	.area XISEG   (XDATA)
+                                    170 	.area HOME    (CODE)
+                                    171 	.area GSINIT0 (CODE)
+                                    172 	.area GSINIT1 (CODE)
+                                    173 	.area GSINIT2 (CODE)
+                                    174 	.area GSINIT3 (CODE)
+                                    175 	.area GSINIT4 (CODE)
+                                    176 	.area GSINIT5 (CODE)
+                                    177 	.area GSINIT  (CODE)
+                                    178 	.area GSFINAL (CODE)
+                                    179 	.area CSEG    (CODE)
+                                    180 ;--------------------------------------------------------
+                                    181 ; global & static initialisations
+                                    182 ;--------------------------------------------------------
+                                    183 	.area HOME    (CODE)
+                                    184 	.area GSINIT  (CODE)
+                                    185 	.area GSFINAL (CODE)
+                                    186 	.area GSINIT  (CODE)
+                                    187 ;--------------------------------------------------------
+                                    188 ; Home
+                                    189 ;--------------------------------------------------------
+                                    190 	.area HOME    (CODE)
+                                    191 	.area HOME    (CODE)
+                                    192 ;--------------------------------------------------------
+                                    193 ; code
+                                    194 ;--------------------------------------------------------
+                                    195 	.area CSEG    (CODE)
+                                    196 ;------------------------------------------------------------
+                                    197 ;Allocation info for local variables in function 'CfgFsys'
+                                    198 ;------------------------------------------------------------
+                                    199 ;	sys.c:11: void CfgFsys(void)
+                                    200 ;	-----------------------------------------
+                                    201 ;	 function CfgFsys
+                                    202 ;	-----------------------------------------
+      000000                        203 _CfgFsys:
+                           000007   204 	ar7 = 0x07
+                           000006   205 	ar6 = 0x06
+                           000005   206 	ar5 = 0x05
+                           000004   207 	ar4 = 0x04
+                           000003   208 	ar3 = 0x03
+                           000002   209 	ar2 = 0x02
+                           000001   210 	ar1 = 0x01
+                           000000   211 	ar0 = 0x00
+                                    212 ;	sys.c:13: SAFE_MOD = 0x55;
+      000000 75 A1 55         [24]  213 	mov	_SAFE_MOD,#0x55
+                                    214 ;	sys.c:14: SAFE_MOD = 0xAA;
+      000003 75 A1 AA         [24]  215 	mov	_SAFE_MOD,#0xaa
+                                    216 ;	sys.c:16: CLOCK_CFG = (CLOCK_CFG & ~MASK_SYS_CK_SEL) | 0x06;
+      000006 74 F8            [12]  217 	mov	a,#0xf8
+      000008 55 B9            [12]  218 	anl	a,_CLOCK_CFG
+      00000A 44 06            [12]  219 	orl	a,#0x06
+      00000C F5 B9            [12]  220 	mov	_CLOCK_CFG,a
+                                    221 ;	sys.c:17: SAFE_MOD = 0x00;
+      00000E 75 A1 00         [24]  222 	mov	_SAFE_MOD,#0x00
+                                    223 ;	sys.c:18: }
+      000011 22               [24]  224 	ret
+                                    225 ;------------------------------------------------------------
+                                    226 ;Allocation info for local variables in function 'mDelayuS'
+                                    227 ;------------------------------------------------------------
+                                    228 ;n             Allocated to registers 
+                                    229 ;------------------------------------------------------------
+                                    230 ;	sys.c:20: void mDelayuS(UINT16 n)
+                                    231 ;	-----------------------------------------
+                                    232 ;	 function mDelayuS
+                                    233 ;	-----------------------------------------
+      000012                        234 _mDelayuS:
+      000012 AE 82            [24]  235 	mov	r6, dpl
+      000014 AF 83            [24]  236 	mov	r7, dph
+                                    237 ;	sys.c:22: while (n) {
+      000016                        238 00101$:
+      000016 EE               [12]  239 	mov	a,r6
+      000017 4F               [12]  240 	orl	a,r7
+      000018 60 0E            [24]  241 	jz	00104$
+                                    242 ;	sys.c:28: NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
+      00001A 00               [12]  243 	nop
+      00001B 00               [12]  244 	nop
+      00001C 00               [12]  245 	nop
+      00001D 00               [12]  246 	nop
+      00001E 00               [12]  247 	nop
+      00001F 00               [12]  248 	nop
+      000020 00               [12]  249 	nop
+                                    250 ;	sys.c:30: --n;
+      000021 1E               [12]  251 	dec	r6
+      000022 BE FF 01         [24]  252 	cjne	r6,#0xff,00122$
+      000025 1F               [12]  253 	dec	r7
+      000026                        254 00122$:
+      000026 80 EE            [24]  255 	sjmp	00101$
+      000028                        256 00104$:
+                                    257 ;	sys.c:32: }
+      000028 22               [24]  258 	ret
+                                    259 ;------------------------------------------------------------
+                                    260 ;Allocation info for local variables in function 'mDelaymS'
+                                    261 ;------------------------------------------------------------
+                                    262 ;n             Allocated to registers 
+                                    263 ;------------------------------------------------------------
+                                    264 ;	sys.c:34: void mDelaymS(UINT16 n)
+                                    265 ;	-----------------------------------------
+                                    266 ;	 function mDelaymS
+                                    267 ;	-----------------------------------------
+      000029                        268 _mDelaymS:
+      000029 AE 82            [24]  269 	mov	r6, dpl
+      00002B AF 83            [24]  270 	mov	r7, dph
+                                    271 ;	sys.c:36: while (n) { mDelayuS(1000); --n; }
+      00002D                        272 00101$:
+      00002D EE               [12]  273 	mov	a,r6
+      00002E 4F               [12]  274 	orl	a,r7
+      00002F 60 15            [24]  275 	jz	00104$
+      000031 90 03 E8         [24]  276 	mov	dptr,#0x03e8
+      000034 C0 07            [24]  277 	push	ar7
+      000036 C0 06            [24]  278 	push	ar6
+      000038 12r00r12         [24]  279 	lcall	_mDelayuS
+      00003B D0 06            [24]  280 	pop	ar6
+      00003D D0 07            [24]  281 	pop	ar7
+      00003F 1E               [12]  282 	dec	r6
+      000040 BE FF 01         [24]  283 	cjne	r6,#0xff,00122$
+      000043 1F               [12]  284 	dec	r7
+      000044                        285 00122$:
+      000044 80 E7            [24]  286 	sjmp	00101$
+      000046                        287 00104$:
+                                    288 ;	sys.c:37: }
+      000046 22               [24]  289 	ret
+                                    290 	.area CSEG    (CODE)
+                                    291 	.area CONST   (CODE)
+                                    292 	.area XINIT   (CODE)
+                                    293 	.area CABS    (ABS,CODE)

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(findstr /N \"P1_0 P1_1 P1_4 P1_5 P1_6 P1_7 P3_ PORT_CFG\" \"C:\\\\Users\\\\zhou\\\\Code\\\\mittif.com\\\\RGB\\\\CH552EVT\\\\EVT\\\\CH552.H\")",
+      "Bash(findstr /R \"sbit Port\")",
+      "Bash(findstr /N \"CfgFsys mDelaymS DEFAULT_ENDP0_SIZE MAX_PACKET_SIZE Ready UINT8 UINT16\" \"C:\\\\Users\\\\zhou\\\\Code\\\\mittif.com\\\\RGB\\\\CH554EVT\\\\EVT\\\\EXAM\\\\Public\\\\Debug.H\")",
+      "Bash(findstr /R \"^.*:[0-9]\")",
+      "Bash(more +0)",
+      "Bash(sdcc -v)",
+      "Bash(make -v)",
+      "Bash(make *)",
+      "Bash(mkdir -p cli/src/rgb_cli)",
+      "Bash(uv --version)",
+      "Bash(uv sync *)",
+      "Bash(uv run *)",
+      "Bash(grep -A 2 \"0x0043\\\\|0043\\\\$\\\\|ljmp.*_USB_DeviceInterrupt\" build/main.asm build/RGB.map)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Select-String *)",
+      "PowerShell(Get-WinEvent -LogName \"Microsoft-Windows-Kernel-PnP/Configuration\" -MaxEvents 30 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match \"1209|C552|RGB\" } | Select-Object TimeCreated, Id, LevelDisplayName, Message | Format-List | Out-String | Select-Object -First 4000)",
+      "PowerShell(Get-Item *)",
+      "PowerShell(Get-PnpDevice *)",
+      "Bash(sdcc --version)"
+    ]
+  }
+}

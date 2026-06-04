@@ -1,0 +1,18 @@
+[project]
+name = "rgb-cli"
+version = "0.1.0"
+description = "Command-line controller for the CH552 USB 3-LED device"
+requires-python = ">=3.10"
+dependencies = [
+    "hidapi>=0.14",
+]
+
+[project.scripts]
+rgb = "rgb_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rgb_cli"]

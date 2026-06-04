@@ -1,0 +1,333 @@
+                                      1 ;--------------------------------------------------------
+                                      2 ; File Created by SDCC : free open source ISO C Compiler
+                                      3 ; Version 4.6.0 #16555 (MINGW64)
+                                      4 ;--------------------------------------------------------
+                                      5 	.module main
+                                      6 	
+                                      7 	.optsdcc -mmcs51 --model-small
+                                      8 ;--------------------------------------------------------
+                                      9 ; Public variables in this module
+                                     10 ;--------------------------------------------------------
+                                     11 	.globl _main
+                                     12 	.globl _USB_DeviceInit
+                                     13 	.globl _LEDs_Init
+                                     14 	.globl _mDelaymS
+                                     15 	.globl _CfgFsys
+                                     16 	.globl _U_IS_NAK
+                                     17 	.globl _U_TOG_OK
+                                     18 	.globl _U_SIE_FREE
+                                     19 	.globl _UIF_FIFO_OV
+                                     20 	.globl _UIF_SUSPEND
+                                     21 	.globl _UIF_TRANSFER
+                                     22 	.globl _UIF_BUS_RST
+                                     23 	.globl _TF0
+                                     24 	.globl _TR0
+                                     25 	.globl _IE_USB
+                                     26 	.globl _EA
+                                     27 	.globl _ET0
+                                     28 	.globl _UEP1_DMA_H
+                                     29 	.globl _UEP1_DMA_L
+                                     30 	.globl _UEP0_DMA_H
+                                     31 	.globl _UEP0_DMA_L
+                                     32 	.globl _UEP2_3_MOD
+                                     33 	.globl _UEP4_1_MOD
+                                     34 	.globl _UEP2_DMA_H
+                                     35 	.globl _UEP2_DMA_L
+                                     36 	.globl _USB_DEV_AD
+                                     37 	.globl _USB_CTRL
+                                     38 	.globl _USB_INT_EN
+                                     39 	.globl _UEP0_T_LEN
+                                     40 	.globl _UEP0_CTRL
+                                     41 	.globl _USB_RX_LEN
+                                     42 	.globl _USB_MIS_ST
+                                     43 	.globl _USB_INT_ST
+                                     44 	.globl _USB_INT_FG
+                                     45 	.globl _UEP3_T_LEN
+                                     46 	.globl _UEP3_CTRL
+                                     47 	.globl _UEP2_T_LEN
+                                     48 	.globl _UEP2_CTRL
+                                     49 	.globl _UEP1_T_LEN
+                                     50 	.globl _UEP1_CTRL
+                                     51 	.globl _UDEV_CTRL
+                                     52 	.globl _P3_DIR_PU
+                                     53 	.globl _P3_MOD_OC
+                                     54 	.globl _P3
+                                     55 	.globl _P1_DIR_PU
+                                     56 	.globl _P1_MOD_OC
+                                     57 	.globl _P1
+                                     58 	.globl _TH0
+                                     59 	.globl _TL0
+                                     60 	.globl _TMOD
+                                     61 	.globl _TCON
+                                     62 	.globl _IE_EX
+                                     63 	.globl _IE
+                                     64 	.globl _CLOCK_CFG
+                                     65 	.globl _WAKE_CTRL
+                                     66 	.globl _SAFE_MOD
+                                     67 	.globl _PCON
+                                     68 ;--------------------------------------------------------
+                                     69 ; special function registers
+                                     70 ;--------------------------------------------------------
+                                     71 	.area RSEG    (ABS,DATA)
+      000000                         72 	.org 0x0000
+                           000087    73 _PCON	=	0x0087
+                           0000A1    74 _SAFE_MOD	=	0x00a1
+                           0000A9    75 _WAKE_CTRL	=	0x00a9
+                           0000B9    76 _CLOCK_CFG	=	0x00b9
+                           0000A8    77 _IE	=	0x00a8
+                           0000E8    78 _IE_EX	=	0x00e8
+                           000088    79 _TCON	=	0x0088
+                           000089    80 _TMOD	=	0x0089
+                           00008A    81 _TL0	=	0x008a
+                           00008C    82 _TH0	=	0x008c
+                           000090    83 _P1	=	0x0090
+                           000092    84 _P1_MOD_OC	=	0x0092
+                           000093    85 _P1_DIR_PU	=	0x0093
+                           0000B0    86 _P3	=	0x00b0
+                           000096    87 _P3_MOD_OC	=	0x0096
+                           000097    88 _P3_DIR_PU	=	0x0097
+                           0000D1    89 _UDEV_CTRL	=	0x00d1
+                           0000D2    90 _UEP1_CTRL	=	0x00d2
+                           0000D3    91 _UEP1_T_LEN	=	0x00d3
+                           0000D4    92 _UEP2_CTRL	=	0x00d4
+                           0000D5    93 _UEP2_T_LEN	=	0x00d5
+                           0000D6    94 _UEP3_CTRL	=	0x00d6
+                           0000D7    95 _UEP3_T_LEN	=	0x00d7
+                           0000D8    96 _USB_INT_FG	=	0x00d8
+                           0000D9    97 _USB_INT_ST	=	0x00d9
+                           0000DA    98 _USB_MIS_ST	=	0x00da
+                           0000DB    99 _USB_RX_LEN	=	0x00db
+                           0000DC   100 _UEP0_CTRL	=	0x00dc
+                           0000DD   101 _UEP0_T_LEN	=	0x00dd
+                           0000E1   102 _USB_INT_EN	=	0x00e1
+                           0000E2   103 _USB_CTRL	=	0x00e2
+                           0000E3   104 _USB_DEV_AD	=	0x00e3
+                           0000E4   105 _UEP2_DMA_L	=	0x00e4
+                           0000E5   106 _UEP2_DMA_H	=	0x00e5
+                           0000EA   107 _UEP4_1_MOD	=	0x00ea
+                           0000EB   108 _UEP2_3_MOD	=	0x00eb
+                           0000EC   109 _UEP0_DMA_L	=	0x00ec
+                           0000ED   110 _UEP0_DMA_H	=	0x00ed
+                           0000EE   111 _UEP1_DMA_L	=	0x00ee
+                           0000EF   112 _UEP1_DMA_H	=	0x00ef
+                                    113 ;--------------------------------------------------------
+                                    114 ; special function bits
+                                    115 ;--------------------------------------------------------
+                                    116 	.area RSEG    (ABS,DATA)
+      000000                        117 	.org 0x0000
+                           0000A9   118 _ET0	=	0x00a9
+                           0000AF   119 _EA	=	0x00af
+                           0000EA   120 _IE_USB	=	0x00ea
+                           00008C   121 _TR0	=	0x008c
+                           00008D   122 _TF0	=	0x008d
+                           0000D8   123 _UIF_BUS_RST	=	0x00d8
+                           0000D9   124 _UIF_TRANSFER	=	0x00d9
+                           0000DA   125 _UIF_SUSPEND	=	0x00da
+                           0000DC   126 _UIF_FIFO_OV	=	0x00dc
+                           0000DD   127 _U_SIE_FREE	=	0x00dd
+                           0000DE   128 _U_TOG_OK	=	0x00de
+                           0000DF   129 _U_IS_NAK	=	0x00df
+                                    130 ;--------------------------------------------------------
+                                    131 ; overlayable register banks
+                                    132 ;--------------------------------------------------------
+                                    133 	.area REG_BANK_0	(REL,OVR,DATA)
+      000000                        134 	.ds 8
+                                    135 ;--------------------------------------------------------
+                                    136 ; internal ram data
+                                    137 ;--------------------------------------------------------
+                                    138 	.area DSEG    (DATA)
+                                    139 ;--------------------------------------------------------
+                                    140 ; overlayable items in internal ram
+                                    141 ;--------------------------------------------------------
+                                    142 ;--------------------------------------------------------
+                                    143 ; Stack segment in internal ram
+                                    144 ;--------------------------------------------------------
+                                    145 	.area SSEG
+      00003A                        146 __start__stack:
+      00003A                        147 	.ds	1
+                                    148 
+                                    149 ;--------------------------------------------------------
+                                    150 ; indirectly addressable internal ram data
+                                    151 ;--------------------------------------------------------
+                                    152 	.area ISEG    (DATA)
+                                    153 ;--------------------------------------------------------
+                                    154 ; absolute internal ram data
+                                    155 ;--------------------------------------------------------
+                                    156 	.area IABS    (ABS,DATA)
+                                    157 	.area IABS    (ABS,DATA)
+                                    158 ;--------------------------------------------------------
+                                    159 ; bit data
+                                    160 ;--------------------------------------------------------
+                                    161 	.area BSEG    (BIT)
+                                    162 ;--------------------------------------------------------
+                                    163 ; paged external ram data
+                                    164 ;--------------------------------------------------------
+                                    165 	.area PSEG    (PAG,XDATA)
+                                    166 ;--------------------------------------------------------
+                                    167 ; uninitialized external ram data
+                                    168 ;--------------------------------------------------------
+                                    169 	.area XSEG    (XDATA)
+                                    170 ;--------------------------------------------------------
+                                    171 ; absolute external ram data
+                                    172 ;--------------------------------------------------------
+                                    173 	.area XABS    (ABS,XDATA)
+                                    174 ;--------------------------------------------------------
+                                    175 ; initialized external ram data
+                                    176 ;--------------------------------------------------------
+                                    177 	.area XISEG   (XDATA)
+                                    178 	.area HOME    (CODE)
+                                    179 	.area GSINIT0 (CODE)
+                                    180 	.area GSINIT1 (CODE)
+                                    181 	.area GSINIT2 (CODE)
+                                    182 	.area GSINIT3 (CODE)
+                                    183 	.area GSINIT4 (CODE)
+                                    184 	.area GSINIT5 (CODE)
+                                    185 	.area GSINIT  (CODE)
+                                    186 	.area GSFINAL (CODE)
+                                    187 	.area CSEG    (CODE)
+                                    188 ;--------------------------------------------------------
+                                    189 ; interrupt vector
+                                    190 ;--------------------------------------------------------
+                                    191 	.area HOME    (CODE)
+      000000                        192 __interrupt_vect:
+      000000 02 00 B8         [24]  193 	ljmp	__sdcc_gsinit_startup
+      000003 32               [24]  194 	reti
+      000004                        195 	.ds	7
+      00000B 02 02 3E         [24]  196 	ljmp	_Timer0Interrupt
+      00000E                        197 	.ds	5
+      000013 32               [24]  198 	reti
+      000014                        199 	.ds	7
+      00001B 32               [24]  200 	reti
+      00001C                        201 	.ds	7
+      000023 32               [24]  202 	reti
+      000024                        203 	.ds	7
+      00002B 32               [24]  204 	reti
+      00002C                        205 	.ds	7
+      000033 32               [24]  206 	reti
+      000034                        207 	.ds	7
+      00003B 32               [24]  208 	reti
+      00003C                        209 	.ds	7
+      000043 02 02 A9         [24]  210 	ljmp	_USB_DeviceInterrupt
+                                    211 ; restartable atomic support routines
+      000046                        212 	.ds	2
+      000048                        213 sdcc_atomic_exchange_rollback_start::
+      000048 00               [12]  214 	nop
+      000049 00               [12]  215 	nop
+      00004A                        216 sdcc_atomic_exchange_pdata_impl:
+      00004A E2               [24]  217 	movx	a, @r0
+      00004B FB               [12]  218 	mov	r3, a
+      00004C EA               [12]  219 	mov	a, r2
+      00004D F2               [24]  220 	movx	@r0, a
+      00004E 80 2C            [24]  221 	sjmp	sdcc_atomic_exchange_exit
+      000050 00               [12]  222 	nop
+      000051 00               [12]  223 	nop
+      000052                        224 sdcc_atomic_exchange_xdata_impl:
+      000052 E0               [24]  225 	movx	a, @dptr
+      000053 FB               [12]  226 	mov	r3, a
+      000054 EA               [12]  227 	mov	a, r2
+      000055 F0               [24]  228 	movx	@dptr, a
+      000056 80 24            [24]  229 	sjmp	sdcc_atomic_exchange_exit
+      000058                        230 sdcc_atomic_compare_exchange_idata_impl:
+      000058 E6               [12]  231 	mov	a, @r0
+      000059 B5 02 02         [24]  232 	cjne	a, ar2, .+#5
+      00005C EB               [12]  233 	mov	a, r3
+      00005D F6               [12]  234 	mov	@r0, a
+      00005E 22               [24]  235 	ret
+      00005F 00               [12]  236 	nop
+      000060                        237 sdcc_atomic_compare_exchange_pdata_impl:
+      000060 E2               [24]  238 	movx	a, @r0
+      000061 B5 02 02         [24]  239 	cjne	a, ar2, .+#5
+      000064 EB               [12]  240 	mov	a, r3
+      000065 F2               [24]  241 	movx	@r0, a
+      000066 22               [24]  242 	ret
+      000067 00               [12]  243 	nop
+      000068                        244 sdcc_atomic_compare_exchange_xdata_impl:
+      000068 E0               [24]  245 	movx	a, @dptr
+      000069 B5 02 02         [24]  246 	cjne	a, ar2, .+#5
+      00006C EB               [12]  247 	mov	a, r3
+      00006D F0               [24]  248 	movx	@dptr, a
+      00006E 22               [24]  249 	ret
+      00006F                        250 sdcc_atomic_exchange_rollback_end::
+                                    251 
+      00006F                        252 sdcc_atomic_exchange_gptr_impl::
+      00006F 30 F6 E0         [24]  253 	jnb	b.6, sdcc_atomic_exchange_xdata_impl
+      000072 A8 82            [24]  254 	mov	r0, dpl
+      000074 20 F5 D3         [24]  255 	jb	b.5, sdcc_atomic_exchange_pdata_impl
+      000077                        256 sdcc_atomic_exchange_idata_impl:
+      000077 EA               [12]  257 	mov	a, r2
+      000078 C6               [12]  258 	xch	a, @r0
+      000079 F5 82            [12]  259 	mov	dpl, a
+      00007B 22               [24]  260 	ret
+      00007C                        261 sdcc_atomic_exchange_exit:
+      00007C 8B 82            [24]  262 	mov	dpl, r3
+      00007E 22               [24]  263 	ret
+      00007F                        264 sdcc_atomic_compare_exchange_gptr_impl::
+      00007F 30 F6 E6         [24]  265 	jnb	b.6, sdcc_atomic_compare_exchange_xdata_impl
+      000082 A8 82            [24]  266 	mov	r0, dpl
+      000084 20 F5 D9         [24]  267 	jb	b.5, sdcc_atomic_compare_exchange_pdata_impl
+      000087 80 CF            [24]  268 	sjmp	sdcc_atomic_compare_exchange_idata_impl
+                                    269 ;--------------------------------------------------------
+                                    270 ; global & static initialisations
+                                    271 ;--------------------------------------------------------
+                                    272 	.area HOME    (CODE)
+                                    273 	.area GSINIT  (CODE)
+                                    274 	.area GSFINAL (CODE)
+                                    275 	.area GSINIT  (CODE)
+                                    276 	.globl __sdcc_gsinit_startup
+                                    277 	.globl __sdcc_program_startup
+                                    278 	.globl __start__stack
+                                    279 	.globl __mcs51_genXINIT
+                                    280 	.globl __mcs51_genXRAMCLEAR
+                                    281 	.globl __mcs51_genRAMCLEAR
+                                    282 	.area GSFINAL (CODE)
+      000127 02 00 89         [24]  283 	ljmp	__sdcc_program_startup
+                                    284 ;--------------------------------------------------------
+                                    285 ; Home
+                                    286 ;--------------------------------------------------------
+                                    287 	.area HOME    (CODE)
+                                    288 	.area HOME    (CODE)
+      000089                        289 __sdcc_program_startup:
+      000089 12 01 2A         [24]  290 	lcall	_main
+      00008C                        291 __sdcc_program_exit:
+      00008C 80 FE            [24]  292 	sjmp	.
+                                    293 ;	return from main will return to caller
+                                    294 ;--------------------------------------------------------
+                                    295 ; code
+                                    296 ;--------------------------------------------------------
+                                    297 	.area CSEG    (CODE)
+                                    298 ;------------------------------------------------------------
+                                    299 ;Allocation info for local variables in function 'main'
+                                    300 ;------------------------------------------------------------
+                                    301 ;	main.c:17: void main(void)
+                                    302 ;	-----------------------------------------
+                                    303 ;	 function main
+                                    304 ;	-----------------------------------------
+      00012A                        305 _main:
+                           000007   306 	ar7 = 0x07
+                           000006   307 	ar6 = 0x06
+                           000005   308 	ar5 = 0x05
+                           000004   309 	ar4 = 0x04
+                           000003   310 	ar3 = 0x03
+                           000002   311 	ar2 = 0x02
+                           000001   312 	ar1 = 0x01
+                           000000   313 	ar0 = 0x00
+                                    314 ;	main.c:19: CfgFsys();
+      00012A 12 01 3D         [24]  315 	lcall	_CfgFsys
+                                    316 ;	main.c:20: mDelaymS(5);
+      00012D 90 00 05         [24]  317 	mov	dptr,#0x0005
+      000130 12 01 66         [24]  318 	lcall	_mDelaymS
+                                    319 ;	main.c:22: LEDs_Init();
+      000133 12 02 13         [24]  320 	lcall	_LEDs_Init
+                                    321 ;	main.c:23: USB_DeviceInit();
+      000136 12 06 B5         [24]  322 	lcall	_USB_DeviceInit
+                                    323 ;	main.c:25: EA = 1;
+                                    324 ;	assignBit
+      000139 D2 AF            [12]  325 	setb	_EA
+                                    326 ;	main.c:27: while (1) {
+      00013B                        327 00102$:
+                                    328 ;	main.c:30: }
+      00013B 80 FE            [24]  329 	sjmp	00102$
+                                    330 	.area CSEG    (CODE)
+                                    331 	.area CONST   (CODE)
+                                    332 	.area XINIT   (CODE)
+                                    333 	.area CABS    (ABS,CODE)

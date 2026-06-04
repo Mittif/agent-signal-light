@@ -1,0 +1,356 @@
+                                      1 ;--------------------------------------------------------
+                                      2 ; File Created by SDCC : free open source ISO C Compiler
+                                      3 ; Version 4.6.0 #16555 (MINGW64)
+                                      4 ;--------------------------------------------------------
+                                      5 	.module usb_desc
+                                      6 	
+                                      7 	.optsdcc -mmcs51 --model-small
+                                      8 ;--------------------------------------------------------
+                                      9 ; Public variables in this module
+                                     10 ;--------------------------------------------------------
+                                     11 	.globl _MyReportDescrLen
+                                     12 	.globl _MyProdInfoLen
+                                     13 	.globl _MyManuInfoLen
+                                     14 	.globl _MyLangDescrLen
+                                     15 	.globl _MyCfgDescrLen
+                                     16 	.globl _MyDevDescrLen
+                                     17 	.globl _MyProdInfo
+                                     18 	.globl _MyManuInfo
+                                     19 	.globl _MyLangDescr
+                                     20 	.globl _MyCfgDescr
+                                     21 	.globl _MyDevDescr
+                                     22 	.globl _MyReportDescr
+                                     23 	.globl _U_IS_NAK
+                                     24 	.globl _U_TOG_OK
+                                     25 	.globl _U_SIE_FREE
+                                     26 	.globl _UIF_FIFO_OV
+                                     27 	.globl _UIF_SUSPEND
+                                     28 	.globl _UIF_TRANSFER
+                                     29 	.globl _UIF_BUS_RST
+                                     30 	.globl _TF0
+                                     31 	.globl _TR0
+                                     32 	.globl _IE_USB
+                                     33 	.globl _EA
+                                     34 	.globl _ET0
+                                     35 	.globl _UEP1_DMA_H
+                                     36 	.globl _UEP1_DMA_L
+                                     37 	.globl _UEP0_DMA_H
+                                     38 	.globl _UEP0_DMA_L
+                                     39 	.globl _UEP2_3_MOD
+                                     40 	.globl _UEP4_1_MOD
+                                     41 	.globl _UEP2_DMA_H
+                                     42 	.globl _UEP2_DMA_L
+                                     43 	.globl _USB_DEV_AD
+                                     44 	.globl _USB_CTRL
+                                     45 	.globl _USB_INT_EN
+                                     46 	.globl _UEP0_T_LEN
+                                     47 	.globl _UEP0_CTRL
+                                     48 	.globl _USB_RX_LEN
+                                     49 	.globl _USB_MIS_ST
+                                     50 	.globl _USB_INT_ST
+                                     51 	.globl _USB_INT_FG
+                                     52 	.globl _UEP3_T_LEN
+                                     53 	.globl _UEP3_CTRL
+                                     54 	.globl _UEP2_T_LEN
+                                     55 	.globl _UEP2_CTRL
+                                     56 	.globl _UEP1_T_LEN
+                                     57 	.globl _UEP1_CTRL
+                                     58 	.globl _UDEV_CTRL
+                                     59 	.globl _P3_DIR_PU
+                                     60 	.globl _P3_MOD_OC
+                                     61 	.globl _P3
+                                     62 	.globl _P1_DIR_PU
+                                     63 	.globl _P1_MOD_OC
+                                     64 	.globl _P1
+                                     65 	.globl _TH0
+                                     66 	.globl _TL0
+                                     67 	.globl _TMOD
+                                     68 	.globl _TCON
+                                     69 	.globl _IE_EX
+                                     70 	.globl _IE
+                                     71 	.globl _CLOCK_CFG
+                                     72 	.globl _WAKE_CTRL
+                                     73 	.globl _SAFE_MOD
+                                     74 	.globl _PCON
+                                     75 ;--------------------------------------------------------
+                                     76 ; special function registers
+                                     77 ;--------------------------------------------------------
+                                     78 	.area RSEG    (ABS,DATA)
+      000000                         79 	.org 0x0000
+                           000087    80 _PCON	=	0x0087
+                           0000A1    81 _SAFE_MOD	=	0x00a1
+                           0000A9    82 _WAKE_CTRL	=	0x00a9
+                           0000B9    83 _CLOCK_CFG	=	0x00b9
+                           0000A8    84 _IE	=	0x00a8
+                           0000E8    85 _IE_EX	=	0x00e8
+                           000088    86 _TCON	=	0x0088
+                           000089    87 _TMOD	=	0x0089
+                           00008A    88 _TL0	=	0x008a
+                           00008C    89 _TH0	=	0x008c
+                           000090    90 _P1	=	0x0090
+                           000092    91 _P1_MOD_OC	=	0x0092
+                           000093    92 _P1_DIR_PU	=	0x0093
+                           0000B0    93 _P3	=	0x00b0
+                           000096    94 _P3_MOD_OC	=	0x0096
+                           000097    95 _P3_DIR_PU	=	0x0097
+                           0000D1    96 _UDEV_CTRL	=	0x00d1
+                           0000D2    97 _UEP1_CTRL	=	0x00d2
+                           0000D3    98 _UEP1_T_LEN	=	0x00d3
+                           0000D4    99 _UEP2_CTRL	=	0x00d4
+                           0000D5   100 _UEP2_T_LEN	=	0x00d5
+                           0000D6   101 _UEP3_CTRL	=	0x00d6
+                           0000D7   102 _UEP3_T_LEN	=	0x00d7
+                           0000D8   103 _USB_INT_FG	=	0x00d8
+                           0000D9   104 _USB_INT_ST	=	0x00d9
+                           0000DA   105 _USB_MIS_ST	=	0x00da
+                           0000DB   106 _USB_RX_LEN	=	0x00db
+                           0000DC   107 _UEP0_CTRL	=	0x00dc
+                           0000DD   108 _UEP0_T_LEN	=	0x00dd
+                           0000E1   109 _USB_INT_EN	=	0x00e1
+                           0000E2   110 _USB_CTRL	=	0x00e2
+                           0000E3   111 _USB_DEV_AD	=	0x00e3
+                           0000E4   112 _UEP2_DMA_L	=	0x00e4
+                           0000E5   113 _UEP2_DMA_H	=	0x00e5
+                           0000EA   114 _UEP4_1_MOD	=	0x00ea
+                           0000EB   115 _UEP2_3_MOD	=	0x00eb
+                           0000EC   116 _UEP0_DMA_L	=	0x00ec
+                           0000ED   117 _UEP0_DMA_H	=	0x00ed
+                           0000EE   118 _UEP1_DMA_L	=	0x00ee
+                           0000EF   119 _UEP1_DMA_H	=	0x00ef
+                                    120 ;--------------------------------------------------------
+                                    121 ; special function bits
+                                    122 ;--------------------------------------------------------
+                                    123 	.area RSEG    (ABS,DATA)
+      000000                        124 	.org 0x0000
+                           0000A9   125 _ET0	=	0x00a9
+                           0000AF   126 _EA	=	0x00af
+                           0000EA   127 _IE_USB	=	0x00ea
+                           00008C   128 _TR0	=	0x008c
+                           00008D   129 _TF0	=	0x008d
+                           0000D8   130 _UIF_BUS_RST	=	0x00d8
+                           0000D9   131 _UIF_TRANSFER	=	0x00d9
+                           0000DA   132 _UIF_SUSPEND	=	0x00da
+                           0000DC   133 _UIF_FIFO_OV	=	0x00dc
+                           0000DD   134 _U_SIE_FREE	=	0x00dd
+                           0000DE   135 _U_TOG_OK	=	0x00de
+                           0000DF   136 _U_IS_NAK	=	0x00df
+                                    137 ;--------------------------------------------------------
+                                    138 ; overlayable register banks
+                                    139 ;--------------------------------------------------------
+                                    140 	.area REG_BANK_0	(REL,OVR,DATA)
+      000000                        141 	.ds 8
+                                    142 ;--------------------------------------------------------
+                                    143 ; internal ram data
+                                    144 ;--------------------------------------------------------
+                                    145 	.area DSEG    (DATA)
+                                    146 ;--------------------------------------------------------
+                                    147 ; overlayable items in internal ram
+                                    148 ;--------------------------------------------------------
+                                    149 ;--------------------------------------------------------
+                                    150 ; indirectly addressable internal ram data
+                                    151 ;--------------------------------------------------------
+                                    152 	.area ISEG    (DATA)
+                                    153 ;--------------------------------------------------------
+                                    154 ; absolute internal ram data
+                                    155 ;--------------------------------------------------------
+                                    156 	.area IABS    (ABS,DATA)
+                                    157 	.area IABS    (ABS,DATA)
+                                    158 ;--------------------------------------------------------
+                                    159 ; bit data
+                                    160 ;--------------------------------------------------------
+                                    161 	.area BSEG    (BIT)
+                                    162 ;--------------------------------------------------------
+                                    163 ; paged external ram data
+                                    164 ;--------------------------------------------------------
+                                    165 	.area PSEG    (PAG,XDATA)
+                                    166 ;--------------------------------------------------------
+                                    167 ; uninitialized external ram data
+                                    168 ;--------------------------------------------------------
+                                    169 	.area XSEG    (XDATA)
+                                    170 ;--------------------------------------------------------
+                                    171 ; absolute external ram data
+                                    172 ;--------------------------------------------------------
+                                    173 	.area XABS    (ABS,XDATA)
+                                    174 ;--------------------------------------------------------
+                                    175 ; initialized external ram data
+                                    176 ;--------------------------------------------------------
+                                    177 	.area XISEG   (XDATA)
+                                    178 	.area HOME    (CODE)
+                                    179 	.area GSINIT0 (CODE)
+                                    180 	.area GSINIT1 (CODE)
+                                    181 	.area GSINIT2 (CODE)
+                                    182 	.area GSINIT3 (CODE)
+                                    183 	.area GSINIT4 (CODE)
+                                    184 	.area GSINIT5 (CODE)
+                                    185 	.area GSINIT  (CODE)
+                                    186 	.area GSFINAL (CODE)
+                                    187 	.area CSEG    (CODE)
+                                    188 ;--------------------------------------------------------
+                                    189 ; global & static initialisations
+                                    190 ;--------------------------------------------------------
+                                    191 	.area HOME    (CODE)
+                                    192 	.area GSINIT  (CODE)
+                                    193 	.area GSFINAL (CODE)
+                                    194 	.area GSINIT  (CODE)
+                                    195 ;--------------------------------------------------------
+                                    196 ; Home
+                                    197 ;--------------------------------------------------------
+                                    198 	.area HOME    (CODE)
+                                    199 	.area HOME    (CODE)
+                                    200 ;--------------------------------------------------------
+                                    201 ; code
+                                    202 ;--------------------------------------------------------
+                                    203 	.area CSEG    (CODE)
+                                    204 	.area CSEG    (CODE)
+                                    205 	.area CONST   (CODE)
+                                    206 	.area CONST   (CODE)
+      000000                        207 _MyReportDescr:
+      000000 06                     208 	.db #0x06	; 6
+      000001 00                     209 	.db #0x00	; 0
+      000002 FF                     210 	.db #0xff	; 255
+      000003 09                     211 	.db #0x09	; 9
+      000004 01                     212 	.db #0x01	; 1
+      000005 A1                     213 	.db #0xa1	; 161
+      000006 01                     214 	.db #0x01	; 1
+      000007 09                     215 	.db #0x09	; 9
+      000008 02                     216 	.db #0x02	; 2
+      000009 15                     217 	.db #0x15	; 21
+      00000A 00                     218 	.db #0x00	; 0
+      00000B 26                     219 	.db #0x26	; 38
+      00000C FF                     220 	.db #0xff	; 255
+      00000D 00                     221 	.db #0x00	; 0
+      00000E 75                     222 	.db #0x75	; 117	'u'
+      00000F 08                     223 	.db #0x08	; 8
+      000010 95                     224 	.db #0x95	; 149
+      000011 01                     225 	.db #0x01	; 1
+      000012 91                     226 	.db #0x91	; 145
+      000013 02                     227 	.db #0x02	; 2
+      000014 C0                     228 	.db #0xc0	; 192
+                                    229 	.area CSEG    (CODE)
+                                    230 	.area CONST   (CODE)
+      000015                        231 _MyDevDescr:
+      000015 12                     232 	.db #0x12	; 18
+      000016 01                     233 	.db #0x01	; 1
+      000017 10                     234 	.db #0x10	; 16
+      000018 01                     235 	.db #0x01	; 1
+      000019 00                     236 	.db #0x00	; 0
+      00001A 00                     237 	.db #0x00	; 0
+      00001B 00                     238 	.db #0x00	; 0
+      00001C 08                     239 	.db #0x08	; 8
+      00001D 09                     240 	.db #0x09	; 9
+      00001E 12                     241 	.db #0x12	; 18
+      00001F 52                     242 	.db #0x52	; 82	'R'
+      000020 C5                     243 	.db #0xc5	; 197
+      000021 00                     244 	.db #0x00	; 0
+      000022 10                     245 	.db #0x10	; 16
+      000023 01                     246 	.db #0x01	; 1
+      000024 02                     247 	.db #0x02	; 2
+      000025 00                     248 	.db #0x00	; 0
+      000026 01                     249 	.db #0x01	; 1
+                                    250 	.area CSEG    (CODE)
+                                    251 	.area CONST   (CODE)
+      000027                        252 _MyCfgDescr:
+      000027 09                     253 	.db #0x09	; 9
+      000028 02                     254 	.db #0x02	; 2
+      000029 22                     255 	.db #0x22	; 34
+      00002A 00                     256 	.db #0x00	; 0
+      00002B 01                     257 	.db #0x01	; 1
+      00002C 01                     258 	.db #0x01	; 1
+      00002D 00                     259 	.db #0x00	; 0
+      00002E 80                     260 	.db #0x80	; 128
+      00002F 32                     261 	.db #0x32	; 50	'2'
+      000030 09                     262 	.db #0x09	; 9
+      000031 04                     263 	.db #0x04	; 4
+      000032 00                     264 	.db #0x00	; 0
+      000033 00                     265 	.db #0x00	; 0
+      000034 01                     266 	.db #0x01	; 1
+      000035 03                     267 	.db #0x03	; 3
+      000036 00                     268 	.db #0x00	; 0
+      000037 00                     269 	.db #0x00	; 0
+      000038 00                     270 	.db #0x00	; 0
+      000039 09                     271 	.db #0x09	; 9
+      00003A 21                     272 	.db #0x21	; 33
+      00003B 11                     273 	.db #0x11	; 17
+      00003C 01                     274 	.db #0x01	; 1
+      00003D 00                     275 	.db #0x00	; 0
+      00003E 01                     276 	.db #0x01	; 1
+      00003F 22                     277 	.db #0x22	; 34
+      000040 15                     278 	.db #0x15	; 21
+      000041 00                     279 	.db #0x00	; 0
+      000042 07                     280 	.db #0x07	; 7
+      000043 05                     281 	.db #0x05	; 5
+      000044 81                     282 	.db #0x81	; 129
+      000045 03                     283 	.db #0x03	; 3
+      000046 08                     284 	.db #0x08	; 8
+      000047 00                     285 	.db #0x00	; 0
+      000048 0A                     286 	.db #0x0a	; 10
+                                    287 	.area CSEG    (CODE)
+                                    288 	.area CONST   (CODE)
+      000049                        289 _MyLangDescr:
+      000049 04                     290 	.db #0x04	; 4
+      00004A 03                     291 	.db #0x03	; 3
+      00004B 09                     292 	.db #0x09	; 9
+      00004C 04                     293 	.db #0x04	; 4
+                                    294 	.area CSEG    (CODE)
+                                    295 	.area CONST   (CODE)
+      00004D                        296 _MyManuInfo:
+      00004D 0E                     297 	.db #0x0e	; 14
+      00004E 03                     298 	.db #0x03	; 3
+      00004F 6D                     299 	.db #0x6d	; 109	'm'
+      000050 00                     300 	.db #0x00	; 0
+      000051 69                     301 	.db #0x69	; 105	'i'
+      000052 00                     302 	.db #0x00	; 0
+      000053 74                     303 	.db #0x74	; 116	't'
+      000054 00                     304 	.db #0x00	; 0
+      000055 74                     305 	.db #0x74	; 116	't'
+      000056 00                     306 	.db #0x00	; 0
+      000057 69                     307 	.db #0x69	; 105	'i'
+      000058 00                     308 	.db #0x00	; 0
+      000059 66                     309 	.db #0x66	; 102	'f'
+      00005A 00                     310 	.db #0x00	; 0
+                                    311 	.area CSEG    (CODE)
+                                    312 	.area CONST   (CODE)
+      00005B                        313 _MyProdInfo:
+      00005B 10                     314 	.db #0x10	; 16
+      00005C 03                     315 	.db #0x03	; 3
+      00005D 52                     316 	.db #0x52	; 82	'R'
+      00005E 00                     317 	.db #0x00	; 0
+      00005F 47                     318 	.db #0x47	; 71	'G'
+      000060 00                     319 	.db #0x00	; 0
+      000061 42                     320 	.db #0x42	; 66	'B'
+      000062 00                     321 	.db #0x00	; 0
+      000063 2D                     322 	.db #0x2d	; 45
+      000064 00                     323 	.db #0x00	; 0
+      000065 4C                     324 	.db #0x4c	; 76	'L'
+      000066 00                     325 	.db #0x00	; 0
+      000067 45                     326 	.db #0x45	; 69	'E'
+      000068 00                     327 	.db #0x00	; 0
+      000069 44                     328 	.db #0x44	; 68	'D'
+      00006A 00                     329 	.db #0x00	; 0
+                                    330 	.area CSEG    (CODE)
+                                    331 	.area CONST   (CODE)
+      00006B                        332 _MyDevDescrLen:
+      00006B 12                     333 	.db #0x12	; 18
+                                    334 	.area CSEG    (CODE)
+                                    335 	.area CONST   (CODE)
+      00006C                        336 _MyCfgDescrLen:
+      00006C 22                     337 	.db #0x22	; 34
+                                    338 	.area CSEG    (CODE)
+                                    339 	.area CONST   (CODE)
+      00006D                        340 _MyLangDescrLen:
+      00006D 04                     341 	.db #0x04	; 4
+                                    342 	.area CSEG    (CODE)
+                                    343 	.area CONST   (CODE)
+      00006E                        344 _MyManuInfoLen:
+      00006E 0E                     345 	.db #0x0e	; 14
+                                    346 	.area CSEG    (CODE)
+                                    347 	.area CONST   (CODE)
+      00006F                        348 _MyProdInfoLen:
+      00006F 10                     349 	.db #0x10	; 16
+                                    350 	.area CSEG    (CODE)
+                                    351 	.area CONST   (CODE)
+      000070                        352 _MyReportDescrLen:
+      000070 15                     353 	.db #0x15	; 21
+                                    354 	.area CSEG    (CODE)
+                                    355 	.area XINIT   (CODE)
+                                    356 	.area CABS    (ABS,CODE)

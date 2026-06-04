@@ -1,0 +1,22 @@
+-muwx
+-i build/RGB.ihx
+-M
+-X 0x0340
+-C 0x3800
+-b HOME = 0x0000
+-b XSEG = 0x00c0
+-b PSEG = 0x00c0
+-b ISEG = 0x0000
+-b BSEG = 0x0000
+-k C:\Program Files\SDCC\bin\..\lib\small
+-l mcs51
+-l libsdcc
+-l libint
+-l liblong
+-l libfloat
+build/main.rel
+build/sys.rel
+build/usb_desc.rel
+build/usb_isr.rel
+
+-e
