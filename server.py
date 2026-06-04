@@ -43,6 +43,11 @@ PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / f".{APP_SLUG}"
 CONFIG_PATH = DATA_DIR / "config.json"
 DEFAULT_CONFIG_PATH = PROJECT_DIR / "config.default.json"
+CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
+CODEX_SESSIONS_DIR = CODEX_HOME / "sessions"
+CODEX_FALLBACK_SID = "__codex_activity__"
+CODEX_FALLBACK_IDLE_S = 8.0
+CODEX_FALLBACK_SCAN_S = 1.0
 
 # LED modes (match firmware encoding: bit-packed 0/1/2 per LED in HID byte)
 LED_MODES = {"off": 0, "on": 1, "breathe": 2}
@@ -754,6 +759,57 @@ scheduler = Scheduler(config, on_change=_emit_snapshot)
 config.on_change(_on_config_change)
 
 threading.Thread(target=_hid_health_loop, daemon=True, name="hid-health").start()
+
+
+# ============================================================
+# Codex app/CLI fallback monitor
+# ============================================================
+
+def _latest_codex_session_file() -> Path | None:
+    if not CODEX_SESSIONS_DIR.exists():
+        return None
+    try:
+        files = [p for p in CODEX_SESSIONS_DIR.rglob("rollout-*.jsonl") if p.is_file()]
+    except OSError:
+        return None
+    if not files:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime)
+
+
+def _codex_activity_fallback_loop() -> None:
+    active = False
+    last_path: Path | None = None
+    while True:
+        time.sleep(CODEX_FALLBACK_SCAN_S)
+        path = _latest_codex_session_file()
+        now = time.time()
+        recent = False
+        cwd = None
+        if path is not None:
+            try:
+                mtime = path.stat().st_mtime
+                recent = (now - mtime) <= CODEX_FALLBACK_IDLE_S
+                cwd = str(path.parent)
+            except OSError:
+                recent = False
+        if recent:
+            sessions.update(CODEX_FALLBACK_SID, "UserPromptSubmit", cwd=cwd, agent="codex")
+            if not active or path != last_path:
+                print(f"  codex-fallback: active ({path})", flush=True)
+            active = True
+            last_path = path
+        elif active:
+            removed = sessions.remove(CODEX_FALLBACK_SID)
+            print(f"  codex-fallback: idle (removed={removed})", flush=True)
+            active = False
+
+
+threading.Thread(
+    target=_codex_activity_fallback_loop,
+    daemon=True,
+    name="codex-activity-fallback",
+).start()
 
 
 # ============================================================

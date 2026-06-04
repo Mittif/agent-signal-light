@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Agent Signal Light installer — cross-platform (macOS / Windows / Linux).
+"""Agent Signal Light installer - cross-platform (macOS / Windows / Linux).
 
 Run once to:
-  • install hidapi (pip --user)
-  • copy default config to ~/.agent-signal-light/config.json
-  • register an auto-start service so the daemon runs at login + respawns on crash
-  • auto-wire Claude Code and Codex hooks (with backups), or print snippets
-  • verify the daemon is up
+  - install hidapi (pip --user)
+  - copy default config to ~/.agent-signal-light/config.json
+  - register an auto-start service so the daemon runs at login + respawns on crash
+  - auto-wire Claude Code and Codex hooks (with backups), or print snippets
+  - verify the daemon is up
 
 Re-runnable. Pass --uninstall to undo. Pass --uninstall --purge to also wipe data.
 Pass --no-hooks to skip auto-wiring the agent hooks.
 
-    python3 install.py
+    install.cmd                    # Windows
+    py -3 install.py               # Windows, if Python Launcher is installed
+    python3 install.py             # macOS / Linux
     python3 install.py --no-hooks
     python3 install.py --uninstall [--purge]
 """
@@ -20,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -39,11 +42,11 @@ LEGACY_LABEL = "com.mitty.agent-signal-light"
 DAEMON_URL = "http://127.0.0.1:7878/api/status"
 
 
-# ──────────────────────────────────────────────────────────── helpers ──
-def info(m): print(f"▶ {m}")
-def ok(m):   print(f"✓ {m}")
+# helpers
+def info(m): print(f"> {m}")
+def ok(m):   print(f"OK {m}")
 def warn(m): print(f"! {m}")
-def err(m):  print(f"✗ {m}", file=sys.stderr)
+def err(m):  print(f"ERR {m}", file=sys.stderr)
 
 
 def install_hidapi() -> None:
@@ -53,9 +56,9 @@ def install_hidapi() -> None:
         return
     except ImportError:
         pass
-    info("installing hidapi …")
+    info("installing hidapi ...")
     base = [sys.executable, "-m", "pip", "install", "--quiet", "--user", "hidapi"]
-    # macOS / recent Debian default to PEP 668 "externally managed" — retry once
+    # macOS / recent Debian default to PEP 668 "externally managed" - retry once
     # with --break-system-packages if the plain --user install fails.
     for extra in ([], ["--break-system-packages"]):
         try:
@@ -63,8 +66,8 @@ def install_hidapi() -> None:
             ok("hidapi installed"); return
         except subprocess.CalledProcessError:
             continue
-    err("hidapi install failed (try manually: python3 -m pip install hidapi)")
-    sys.exit(1)
+    warn("hidapi install failed; continuing without USB HID output")
+    warn(f"to enable the USB light later, run: {sys.executable} -m pip install hidapi")
 
 
 def setup_data_dir() -> None:
@@ -83,7 +86,7 @@ def stop_running_daemons() -> None:
         subprocess.run(["pkill", "-f", pattern], check=False)
 
 
-# ───────────────────────────────────────────────────────────── macOS ──
+# macOS
 def macos_plist_text() -> str:
     log = DATA_DIR / "daemon.log"
     return f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -142,7 +145,7 @@ def uninstall_macos() -> None:
     stop_running_daemons()
 
 
-# ─────────────────────────────────────────────────────────── Windows ──
+# Windows
 def install_windows() -> None:
     startup = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
     startup.mkdir(parents=True, exist_ok=True)
@@ -162,7 +165,7 @@ def install_windows() -> None:
         f'sh.Run """{pythonw}"" ""{server}"" > ""{log}"" 2>&1", 0, False\r\n',
         encoding="utf-8",
     )
-    ok(f"wrote startup launcher → {vbs}")
+    ok(f"wrote startup launcher -> {vbs}")
 
     # Launch now so the user doesn't need to log out first.
     CREATE_NO_WINDOW = 0x08000000
@@ -204,7 +207,7 @@ def uninstall_windows() -> None:
     )
 
 
-# ───────────────────────────────────────────────────────────── Linux ──
+# Linux
 def install_linux() -> None:
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
@@ -248,9 +251,9 @@ def uninstall_linux() -> None:
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
 
 
-# ────────────────────────────────────────────────────── verify / wrap ──
+# verify / wrap
 def verify() -> bool:
-    info("waiting for daemon …")
+    info("waiting for daemon ...")
     for _ in range(15):
         try:
             with urllib.request.urlopen(DAEMON_URL, timeout=1) as r:
@@ -259,7 +262,7 @@ def verify() -> bool:
             return True
         except Exception:
             time.sleep(0.4)
-    err("daemon did not come up — check the log")
+    err("daemon did not come up - check the log")
     return False
 
 
@@ -290,9 +293,22 @@ def _hook_path(osname: str) -> Path:
     return PROJECT_DIR / ("hook.cmd" if osname == "Windows" else "hook.sh")
 
 
+def _mentions_hook_path(text: str, osname: str) -> bool:
+    hook_path = str(_hook_path(osname))
+    fingerprints = {
+        hook_path,
+        hook_path.replace("\\", "\\\\"),
+        hook_path.replace("\\", "\\\\\\\\"),
+        _hook_path(osname).as_posix(),
+    }
+    return any(fp in (text or "") for fp in fingerprints) or (
+        APP_SLUG in (text or "") and _hook_path(osname).name in (text or "")
+    )
+
+
 def _is_ours(cmd: str) -> bool:
     """A hook command is ours iff it points at this checkout's hook script."""
-    return str(_hook_path("Windows")) in (cmd or "") or str(_hook_path("Linux")) in (cmd or "")
+    return _mentions_hook_path(cmd, "Windows") or _mentions_hook_path(cmd, "Linux")
 
 
 def _build_claude_hooks(osname: str) -> dict:
@@ -311,27 +327,106 @@ def _build_claude_hooks(osname: str) -> dict:
 
 
 def _codex_hooks_toml(osname: str) -> str:
-    cmd = _hook_command(osname, "codex")
-    qcmd = json.dumps(cmd)
-    handler = f'{{ type = "command", command = {qcmd}, timeout = 5, statusMessage = "Updating signal light" }}'
-    return f"""# agent-signal-light hooks (auto-installed)
+    return _codex_features_toml() + "\n" + _codex_hooks_table_toml(osname)
+
+
+def _codex_features_toml() -> str:
+    return """# agent-signal-light hooks (auto-installed)
 [features]
 hooks = true
-codex_hooks = true  # older Codex CLI builds
-
-[hooks]
-SessionStart    = [{{ matcher = "startup|resume|clear|compact", hooks = [{handler}] }}]
-UserPromptSubmit = [{{ hooks = [{handler}] }}]
-PreToolUse        = [{{ hooks = [{handler}] }}]
-PermissionRequest = [{{ hooks = [{handler}] }}]
-PostToolUse       = [{{ hooks = [{handler}] }}]
-PreCompact        = [{{ matcher = "manual|auto", hooks = [{handler}] }}]
-PostCompact       = [{{ matcher = "manual|auto", hooks = [{handler}] }}]
-SubagentStart     = [{{ hooks = [{handler}] }}]
-SubagentStop      = [{{ hooks = [{handler}] }}]
-Stop              = [{{ hooks = [{handler}] }}]
-StopFailure       = [{{ hooks = [{handler}] }}]
 """
+
+
+def _codex_hooks_table_toml(osname: str) -> str:
+    cmd = _hook_command(osname, "codex")
+    windows_cmd = f'cmd /d /s /c "{cmd}"' if osname == "Windows" else None
+
+    def block(event: str, matcher: str | None = None) -> str:
+        lines = [f"[[hooks.{event}]]"]
+        if matcher is not None:
+            lines.append(f"matcher = {json.dumps(matcher)}")
+        lines.extend([
+            "",
+            f"[[hooks.{event}.hooks]]",
+            'type = "command"',
+            f"command = {json.dumps(cmd)}",
+        ])
+        if windows_cmd is not None:
+            lines.append(f"command_windows = {json.dumps(windows_cmd)}")
+        lines.extend([
+            "timeout = 5",
+            'statusMessage = "Updating signal light"',
+        ])
+        return "\n".join(lines)
+
+    return "\n\n".join([
+        block("SessionStart", "startup|resume|clear|compact"),
+        block("UserPromptSubmit"),
+        block("PreToolUse"),
+        block("PermissionRequest"),
+        block("PostToolUse"),
+        block("PreCompact", "manual|auto"),
+        block("PostCompact", "manual|auto"),
+        block("SubagentStart"),
+        block("SubagentStop"),
+        block("Stop"),
+        block("StopFailure"),
+    ]) + "\n"
+
+
+def _toml_table_range(lines: list[str], table: str) -> tuple[int, int] | None:
+    header = re.compile(rf"^\s*\[{re.escape(table)}\]\s*(?:#.*)?$")
+    start = None
+    for i, line in enumerate(lines):
+        if header.match(line):
+            start = i
+            break
+    if start is None:
+        return None
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        stripped = lines[i].strip()
+        if stripped.startswith("[") and not stripped.startswith("[["):
+            end = i
+            break
+    return start, end
+
+
+def _has_hooks_config(existing: str) -> bool:
+    return re.search(r"^\s*\[{1,2}hooks(?:\.|\])", existing, re.MULTILINE) is not None
+
+
+def _enable_codex_hook_features(existing: str) -> str:
+    lines = existing.splitlines()
+    table = _toml_table_range(lines, "features")
+    if table is None:
+        suffix = "" if existing.endswith("\n") or not existing else "\n"
+        return existing + suffix + "\n" + _codex_features_toml().rstrip() + "\n"
+
+    start, end = table
+    wanted = {
+        "hooks": "hooks = true",
+    }
+    deprecated_re = re.compile(r"^\s*codex_hooks\s*=")
+    i = start + 1
+    while i < end:
+        if deprecated_re.match(lines[i]):
+            lines.pop(i)
+            end -= 1
+            continue
+        i += 1
+    for key, replacement in wanted.items():
+        found = False
+        key_re = re.compile(rf"^(\s*){re.escape(key)}\s*=")
+        for i in range(start + 1, end):
+            if key_re.match(lines[i]):
+                lines[i] = replacement
+                found = True
+                break
+        if not found:
+            lines.insert(start + 1, replacement)
+            end += 1
+    return "\n".join(lines) + "\n"
 
 
 def install_claude_hooks(osname: str) -> None:
@@ -383,9 +478,9 @@ def install_claude_hooks(osname: str) -> None:
 def install_codex_hooks(osname: str) -> None:
     """Append our [features]/[hooks] block to ~/.codex/config.toml when it's safe.
 
-    TOML is tricky to rewrite in place without a writer library, so we only touch
-    the file when there's no existing [features] or [hooks] table to clobber.
-    Anything else falls back to the printable snippet.
+    TOML is tricky to rewrite in place without a writer library, so we merge only
+    the simple safe case: existing [features] but no [hooks]. If [hooks] already
+    exists and is not ours, fall back to the printable snippet.
     """
     config_path = Path.home() / ".codex" / "config.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -397,17 +492,22 @@ def install_codex_hooks(osname: str) -> None:
         return
 
     existing = config_path.read_text()
-    if str(_hook_path(osname)) in existing:
+    if _mentions_hook_path(existing, osname):
         ok(f"Codex hooks already present in {config_path}")
         return
-    if "[hooks]" in existing or "[features]" in existing:
-        warn("Codex config already defines [hooks]/[features]; printing snippet for manual merge")
+    if _has_hooks_config(existing):
+        warn("Codex config already defines hooks; printing snippet for manual merge")
         print_codex_hooks_snippet(osname)
         return
 
     config_path.with_suffix(".toml.bak").write_text(existing)
     suffix = "" if existing.endswith("\n") else "\n"
-    config_path.write_text(existing + suffix + "\n" + snippet)
+    if _toml_table_range(existing.splitlines(), "features") is not None:
+        updated = _enable_codex_hook_features(existing)
+        updated += "\n" + _codex_hooks_table_toml(osname)
+        config_path.write_text(updated)
+    else:
+        config_path.write_text(existing + suffix + "\n" + snippet)
     ok(f"appended Codex hooks -> {config_path}")
 
 
@@ -467,13 +567,15 @@ def main() -> None:
     elif osname == "Windows": install_windows()
     else:                     install_linux()
 
-    if verify():
-        if args.no_hooks:
-            info("skipping agent hook auto-install (--no-hooks)")
-            print_claude_hooks_snippet(osname)
-            print_codex_hooks_snippet(osname)
-        else:
-            install_hooks(osname)
+    if not verify():
+        sys.exit(1)
+
+    if args.no_hooks:
+        info("skipping agent hook auto-install (--no-hooks)")
+        print_claude_hooks_snippet(osname)
+        print_codex_hooks_snippet(osname)
+    else:
+        install_hooks(osname)
 
 
 if __name__ == "__main__":

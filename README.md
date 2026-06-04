@@ -29,6 +29,14 @@ Agent Signal Light 是一个本地小守护进程，用来把 Claude Code 和 Co
 
 快速安装：
 
+Windows:
+
+```bat
+.\install.cmd
+```
+
+macOS / Linux:
+
 ```sh
 python3 install.py
 ```
@@ -37,17 +45,41 @@ python3 install.py
 Claude Code 和 Codex 的 hook 配置。若不希望安装脚本修改 agent 配置文件，
 请使用：
 
+Windows:
+
+```bat
+.\install.cmd --no-hooks
+```
+
+macOS / Linux:
+
 ```sh
 python3 install.py --no-hooks
 ```
 
 卸载但保留配置：
 
+Windows:
+
+```bat
+.\install.cmd --uninstall
+```
+
+macOS / Linux:
+
 ```sh
 python3 install.py --uninstall
 ```
 
 卸载并删除本工具的数据目录：
+
+Windows:
+
+```bat
+.\install.cmd --uninstall --purge
+```
+
+macOS / Linux:
 
 ```sh
 python3 install.py --uninstall --purge
@@ -76,12 +108,22 @@ python3 install.py --uninstall --purge
 ## Requirements
 
 - Python 3.10 or newer.
+- On Windows, install Python from <https://www.python.org/downloads/windows/>
+  and enable **Add python.exe to PATH**, or run with the Python launcher (`py -3`).
 - `curl` (already present on every supported OS).
 - Optional: a CH552 USB HID light. Without one, the browser mirror still works.
 
 ## One-command install
 
 From a fresh clone:
+
+Windows PowerShell / Command Prompt:
+
+```bat
+.\install.cmd
+```
+
+macOS / Linux:
 
 ```sh
 python3 install.py
@@ -109,11 +151,27 @@ will print them to stdout instead.
 
 Keep your config:
 
+Windows:
+
+```bat
+.\install.cmd --uninstall
+```
+
+macOS / Linux:
+
 ```sh
 python3 install.py --uninstall
 ```
 
 Wipe `~/.agent-signal-light/` too:
+
+Windows:
+
+```bat
+.\install.cmd --uninstall --purge
+```
+
+macOS / Linux:
 
 ```sh
 python3 install.py --uninstall --purge
@@ -211,6 +269,14 @@ curl -X POST http://127.0.0.1:7878/event --data-binary O   # off
 
 For development or troubleshooting, run the daemon directly:
 
+Windows:
+
+```bat
+py -3 server.py
+```
+
+macOS / Linux:
+
 ```sh
 python3 server.py
 ```
@@ -230,6 +296,7 @@ install.py            Cross-platform installer / uninstaller / hook auto-wirer
 config.default.json   Bundled default effects, bindings, and priorities
 hook.sh               macOS/Linux hook forwarder
 hook.cmd              Windows hook forwarder
+install.cmd           Windows installer launcher
 ```
 
 ## Privacy and security notes
