@@ -1,31 +1,87 @@
 # Agent Signal Light
 
-A local signal-light daemon for Claude Code and Codex. It listens for agent hook
-events, maps those events to LED effects, mirrors the current state in a browser,
-and optionally drives a CH552 USB HID light.
+A tiny local daemon that turns Claude Code and Codex hook events into a
+signal-light effect — in your browser, and on an optional CH552 USB HID light.
 
-## Features
-
-- Works with Claude Code and Codex hook events.
-- Tracks multiple agent sessions and displays the highest-priority active event.
-- Drives a CH552 USB HID device with VID/PID `1209:c552`.
-- Provides a browser mirror and configuration editor at `http://127.0.0.1:7878`.
-- Supports custom effects, event bindings, and event priority order.
+- Tracks every concurrent agent session and shows the highest-priority event.
+- Drives a CH552 USB HID light (VID `0x1209` / PID `0xc552`).
+- Browser mirror **and** config editor at <http://127.0.0.1:7878>.
+- Per-agent (Claude / Codex) bindings, priorities, and live-response filter.
+- Custom effects, event bindings, priority order, all editable from the UI.
 - Installs as a login daemon on macOS, Windows, and Linux.
-- Keeps hooks non-blocking with a one-second forwarding timeout.
+- Hook scripts are non-blocking (1-second cap), so a stopped daemon never blocks
+  your agent.
+
+## 中文说明
+
+Agent Signal Light 是一个本地小守护进程，用来把 Claude Code 和 Codex
+的 hook 事件转换成信号灯效果。它可以在浏览器中显示当前状态，也可以驱动
+可选的 CH552 USB HID 灯。
+
+主要功能：
+
+- 同时跟踪多个 agent 会话，并显示优先级最高的事件状态。
+- 支持 Claude / Codex 分别配置事件绑定、优先级和实时响应过滤。
+- 浏览器镜像和配置编辑器地址为 <http://127.0.0.1:7878>。
+- 支持自定义灯效、事件绑定和事件优先级。
+- 可安装为 macOS、Windows、Linux 的登录自启动服务。
+- hook 脚本有 1 秒超时并始终返回成功，守护进程停止时不会阻塞 agent。
+
+快速安装：
+
+```sh
+python3 install.py
+```
+
+安装脚本会创建默认配置、注册自启动服务、启动守护进程，并尽量自动写入
+Claude Code 和 Codex 的 hook 配置。若不希望安装脚本修改 agent 配置文件，
+请使用：
+
+```sh
+python3 install.py --no-hooks
+```
+
+卸载但保留配置：
+
+```sh
+python3 install.py --uninstall
+```
+
+卸载并删除本工具的数据目录：
+
+```sh
+python3 install.py --uninstall --purge
+```
+
+默认灯效含义：
+
+| 状态 | 灯效 |
+| ---- | ---- |
+| 会话开始或停止 | 绿灯常亮 |
+| 正在工作、调用工具、压缩上下文、子 agent 运行 | 黄灯呼吸 |
+| 权限请求、通知、提问、等待用户输入 | 黄灯闪烁 |
+| 停止失败 | 红灯闪烁 |
+| 没有活动会话 | 熄灭 |
+
+配置文件位于 `~/.agent-signal-light/config.json`。建议优先通过浏览器页面编辑，
+也可以直接修改 JSON 或通过 `/api/config` 接口保存。
+
+隐私与安全注意事项：
+
+- 守护进程只监听 `127.0.0.1:7878`，不主动上传数据。
+- 本地浏览器页面会显示活动会话的 `cwd` 路径，路径可能包含项目名或用户名。
+- 安装脚本会备份并修改 Claude Code / Codex 的 hook 配置；使用 `--no-hooks`
+  可以改为手动合并。
 
 ## Requirements
 
 - Python 3.10 or newer.
-- `curl` for the hook forwarding scripts.
-- Optional hardware: a CH552 USB HID light using VID `0x1209` and PID `0xc552`.
+- `curl` (already present on every supported OS).
+- Optional: a CH552 USB HID light. Without one, the browser mirror still works.
 
-The installer installs `hidapi` into the current user's Python environment. The
-browser mirror still works when the hardware is not connected.
+## One-command install
 
-## Quick Start
-
-Run the installer once from the repository root:
+From a fresh clone:
 
 ```sh
 python3 install.py
@@ -33,135 +89,125 @@ python3 install.py
 
 The installer will:
 
-- install `hidapi` if needed;
-- create `~/.agent-signal-light/config.json` from `config.default.json`;
-- register the daemon to start at login;
-- start the daemon immediately;
-- print ready-to-merge Claude Code and Codex hook snippets.
+1. install `hidapi` into your user Python environment (best-effort);
+2. write the default config to `~/.agent-signal-light/config.json`;
+3. register a login-time auto-start service
+   (LaunchAgent on macOS, Startup VBS on Windows, systemd `--user` unit on Linux);
+4. start the daemon and wait for it to come up;
+5. **auto-merge Claude Code hooks** into `~/.claude/settings.json`
+   (preserves your other hooks, makes a `.json.bak` first);
+6. **auto-append Codex hooks** to `~/.codex/config.toml`
+   (only if you don't already have a `[hooks]` table, with a `.toml.bak` backup).
 
-Open the browser mirror and editor:
+After that, open <http://127.0.0.1:7878> and start using Claude Code or Codex —
+events will flow in immediately.
 
-```text
-http://127.0.0.1:7878
+Pass `--no-hooks` if you'd rather merge the snippets yourself; the installer
+will print them to stdout instead.
+
+## Uninstall
+
+Keep your config:
+
+```sh
+python3 install.py --uninstall
 ```
 
-## Agent Hook Setup
+Wipe `~/.agent-signal-light/` too:
 
-After `python3 install.py` finishes, copy the hook snippets it prints.
-
-For Claude Code, merge the printed `hooks` block into:
-
-```text
-~/.claude/settings.json
+```sh
+python3 install.py --uninstall --purge
 ```
 
-For Codex, merge the printed JSON into:
+The uninstaller does **not** touch your `~/.claude/settings.json` or
+`~/.codex/config.toml` — delete the hook entries from those files manually if
+you want them gone.
 
-```text
-~/.codex/hooks.json
-```
+## Default light states
 
-Then make sure hooks are enabled in:
+The defaults map common agent states like this:
 
-```text
-~/.codex/config.toml
-```
+| State                                                    | Effect          |
+| -------------------------------------------------------- | --------------- |
+| Session started or stopped                               | green on        |
+| Prompt submitted, tool use, compaction, subagent running | yellow breathe  |
+| Permission request, notification, elicitation, question  | yellow blink    |
+| Stop failure                                             | red blink       |
+| No active session                                        | off             |
 
-```toml
-[features]
-hooks = true
-codex_hooks = true  # for older Codex CLI builds
-```
-
-The generated hook commands point to `hook.sh` on macOS/Linux or `hook.cmd` on
-Windows. Both scripts forward hook JSON to:
-
-```text
-POST http://127.0.0.1:7878/hook
-```
-
-They always exit successfully so a missing or stopped light daemon does not
-block the parent agent.
-
-## Default Light States
-
-The default configuration maps common agent states to these effects:
-
-| State | Effect |
-| --- | --- |
-| Session started or stopped | green on |
-| Prompt submitted, tool use, compaction, subagent activity | yellow breathe |
-| Permission request, notification, elicitation, user question | yellow blink |
-| Stop failure | red blink |
-| No active session | off |
-
-When multiple sessions are active, the daemon uses the configured
-`event_priority` list to choose which event controls the light.
+When multiple sessions are active, the daemon picks the highest-priority event
+according to the configured `event_priority`. The defaults order: error → waiting
+for user → idle/completed → working.
 
 ## Configuration
 
-User configuration lives at:
+User config lives at:
 
-```text
+```
 ~/.agent-signal-light/config.json
 ```
 
-The default config is tracked in:
+Edit it in the browser editor, or POST a new version to `/api/config`. The
+config holds:
 
-```text
-config.default.json
+- `effects` — named LED animations (frames of 3 LED states + duration).
+- `event_bindings` — hook event names → effect IDs.
+- `event_priority` — global, highest first.
+- `agent_priority` — per-agent (`claude` / `codex`) priority order.
+
+LED states per frame are `off`, `on`, or `breathe`. Frame `ms` is the duration;
+use `null` to hold a frame until the active event changes.
+
+### Per-agent overrides
+
+Event keys may be prefixed with `claude/` or `codex/` to bind that agent
+specifically — the daemon checks the agent-prefixed key first, then falls back
+to the unprefixed global binding. The browser editor's **All / Claude / Codex**
+switch chooses which scope you're editing, and the same switch sets the live
+response filter (`All`, `Claude`-only, or `Codex`-only).
+
+### Tool-specific bindings
+
 ```
-
-You can edit the active configuration from the browser UI or through the API.
-Effects are frame lists with exactly three LED states per frame:
-
-- `off`
-- `on`
-- `breathe`
-
-Frame duration is expressed in milliseconds. Use `null` to hold a frame until
-the active event changes.
-
-The config supports:
-
-- `effects`: named LED animations;
-- `event_bindings`: hook event names mapped to effect IDs;
-- `event_priority`: highest-priority event first.
-
-Tool-specific bindings are supported with keys like:
-
-```text
 PreToolUse:AskUserQuestion
 PostToolUse:AskUserQuestion
 ```
 
-The daemon can also match Codex-specific metadata for session starts,
-compaction triggers, permission requests, and subagent events.
+Combine the two:
 
-## API
-
-```text
-GET  /                    Browser mirror and config editor
-GET  /stream              Server-sent event stream
-GET  /api/status          Current HID, effect, LED, and session status
-GET  /api/config          Current configuration
-POST /api/config          Save a validated configuration
-POST /api/config/reset    Restore bundled defaults
-POST /hook                Agent hook event input
-POST /event               Manual legacy test input: G, Y, W, R, or O
+```
+claude/UserPromptSubmit
+codex/PreToolUse:AskUserQuestion
 ```
 
-Manual test examples:
+## HTTP API
+
+The daemon binds to `127.0.0.1` only and rejects requests with a non-loopback
+`Host` header (DNS-rebinding mitigation).
+
+| Method | Path                  | Description                                |
+| ------ | --------------------- | ------------------------------------------ |
+| GET    | `/`                   | Browser mirror + config editor             |
+| GET    | `/stream`             | SSE: effect, LEDs, HID status, sessions    |
+| GET    | `/api/status`         | One-shot status JSON                       |
+| GET    | `/api/config`         | Current configuration                      |
+| POST   | `/api/config`         | Save a validated configuration             |
+| POST   | `/api/config/reset`   | Restore the bundled defaults               |
+| POST   | `/api/agent-filter`   | Set live-response scope: `all/claude/codex`|
+| POST   | `/hook`               | Agent hook payload (used by `hook.sh`/`.cmd`) |
+| POST   | `/event`              | Legacy manual test: `G` / `Y` / `W` / `R` / `O` |
+
+Manual test:
 
 ```sh
-curl -X POST http://127.0.0.1:7878/event --data-binary G
-curl -X POST http://127.0.0.1:7878/event --data-binary Y
-curl -X POST http://127.0.0.1:7878/event --data-binary W
-curl -X POST http://127.0.0.1:7878/event --data-binary R
-curl -X POST http://127.0.0.1:7878/event --data-binary O
+curl -X POST http://127.0.0.1:7878/event --data-binary G   # green
+curl -X POST http://127.0.0.1:7878/event --data-binary Y   # yellow breathe
+curl -X POST http://127.0.0.1:7878/event --data-binary W   # waiting-for-user blink
+curl -X POST http://127.0.0.1:7878/event --data-binary R   # red blink
+curl -X POST http://127.0.0.1:7878/event --data-binary O   # off
 ```
 
-## Running Manually
+## Running manually
 
 For development or troubleshooting, run the daemon directly:
 
@@ -172,30 +218,27 @@ python3 server.py
 It listens on `127.0.0.1:7878` and writes logs to stdout. The installed
 auto-start daemon writes logs to:
 
-```text
+```
 ~/.agent-signal-light/daemon.log
 ```
 
-## Uninstall
+## Repository layout
 
-Remove the auto-start service while keeping user data:
-
-```sh
-python3 install.py --uninstall
 ```
-
-Remove the auto-start service and delete `~/.agent-signal-light/`:
-
-```sh
-python3 install.py --uninstall --purge
-```
-
-## Repository Layout
-
-```text
-server.py             Local HTTP/SSE daemon, browser UI, config handling, HID output
-install.py            Cross-platform installer and uninstaller
-config.default.json   Bundled default effects, bindings, and priority order
+server.py             Local HTTP/SSE daemon, browser UI, config, HID output
+install.py            Cross-platform installer / uninstaller / hook auto-wirer
+config.default.json   Bundled default effects, bindings, and priorities
 hook.sh               macOS/Linux hook forwarder
 hook.cmd              Windows hook forwarder
 ```
+
+## Privacy and security notes
+
+- The daemon binds **only** to loopback (`127.0.0.1`), validates the `Host`
+  header, and emits no cross-origin headers. This mitigates DNS rebinding and
+  prevents normal cross-origin reads of the SSE/API responses; keep the port
+  local-only and avoid exposing it through proxies or tunnels.
+- Active session `cwd` paths are visible in the local browser UI; nothing is
+  uploaded anywhere.
+- Hook scripts cap latency at 1 second and always exit `0`, so a stopped or
+  missing daemon never blocks your agent.

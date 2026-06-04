@@ -28,6 +28,7 @@ import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 # ============================================================
 # Paths & constants
@@ -40,9 +41,7 @@ APP_SLUG = "agent-signal-light"
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / f".{APP_SLUG}"
-LEGACY_DATA_DIR = Path.home() / ".claude-light"
 CONFIG_PATH = DATA_DIR / "config.json"
-LEGACY_CONFIG_PATH = LEGACY_DATA_DIR / "config.json"
 DEFAULT_CONFIG_PATH = PROJECT_DIR / "config.default.json"
 
 # LED modes (match firmware encoding: bit-packed 0/1/2 per LED in HID byte)
@@ -57,6 +56,25 @@ LEGACY_BYTE_TO_EFFECT = {
     "R": "error_red",
     "O": "off",
 }
+
+CODEX_ONLY_EVENTS = {"PermissionRequest", "PreCompact", "PostCompact", "SubagentStart", "SubagentStop"}
+CLAUDE_ONLY_EVENTS = {"Elicitation", "StopFailure"}
+AGENT_SCOPES = ("all", "claude", "codex")
+AGENT_PREFIXES = ("claude/", "codex/")
+
+
+def _base_event_key(event: str) -> str:
+    for prefix in AGENT_PREFIXES:
+        if event.startswith(prefix):
+            return event[len(prefix):]
+    return event
+
+
+def _agent_from_event_key(event: str) -> str | None:
+    for prefix in AGENT_PREFIXES:
+        if event.startswith(prefix):
+            return prefix[:-1]
+    return None
 
 
 # ============================================================
@@ -251,7 +269,7 @@ def _parse_leds(arr) -> list[int]:
 class Config:
     """Loads / validates / saves the user config; thread-safe accessors."""
 
-    CONFIG_VERSION = 2
+    CONFIG_VERSION = 3
     SESSION_TTL_S = 3600
     OFF_EFFECT_ID = "off"
 
@@ -260,7 +278,9 @@ class Config:
         self._effects: dict[str, Effect] = {}
         self._event_bindings: dict[str, str] = {}
         self._event_priority: list[str] = []
+        self._agent_priority: dict[str, list[str]] = {}
         self._priority_idx: dict[str, int] = {}
+        self._agent_priority_idx: dict[str, dict[str, int]] = {}
         self._listeners: list = []
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
@@ -268,7 +288,7 @@ class Config:
     # ---------- file IO ----------
     def load(self) -> None:
         if not CONFIG_PATH.exists():
-            self._copy_defaults_to_user(prefer_legacy=True)
+            self._copy_defaults_to_user()
         with open(CONFIG_PATH) as f:
             data = json.load(f)
         data, changed = self._migrate_user_config(data)
@@ -276,9 +296,8 @@ class Config:
             self._write_config(data)
         self._apply(data)
 
-    def _copy_defaults_to_user(self, prefer_legacy: bool = False) -> None:
-        source = LEGACY_CONFIG_PATH if prefer_legacy and LEGACY_CONFIG_PATH.exists() else DEFAULT_CONFIG_PATH
-        with open(source) as f:
+    def _copy_defaults_to_user(self) -> None:
+        with open(DEFAULT_CONFIG_PATH) as f:
             CONFIG_PATH.write_text(f.read())
 
     def _write_config(self, data: dict) -> None:
@@ -315,6 +334,20 @@ class Config:
                 priority.append(event)
                 changed = True
 
+        agent_priority = data.setdefault("agent_priority", {})
+        default_agent_priority = defaults.get("agent_priority", {})
+        base_priority = list(data.get("event_priority") or defaults.get("event_priority", []))
+        for scope in ("claude", "codex"):
+            default_list = base_priority or default_agent_priority.get(scope) or defaults.get("event_priority", [])
+            if scope not in agent_priority or not isinstance(agent_priority.get(scope), list):
+                agent_priority[scope] = list(default_list)
+                changed = True
+            else:
+                for event in default_list:
+                    if event not in agent_priority[scope]:
+                        agent_priority[scope].append(event)
+                        changed = True
+
         default_version = defaults.get("version")
         if default_version is not None and data.get("version") != default_version:
             data["version"] = default_version
@@ -339,6 +372,13 @@ class Config:
         builtin_ids = {e["id"] for e in defaults["effects"] if e.get("builtin")}
         for e in data["effects"]:
             e["builtin"] = e["id"] in builtin_ids
+        agent_priority = data.setdefault("agent_priority", {})
+        for scope in ("claude", "codex"):
+            events = agent_priority.get(scope)
+            if not isinstance(events, list):
+                agent_priority[scope] = list(data["event_priority"])
+            else:
+                agent_priority[scope] = [_base_event_key(ev) for ev in events]
         data["version"] = self.CONFIG_VERSION
         self._write_config(data)
         self._apply(data)
@@ -371,6 +411,26 @@ class Config:
         for ev in data["event_priority"]:
             if ev not in data["event_bindings"]:
                 raise ValueError(f"event {ev!r} in priority list has no binding")
+        agent_priority = data.get("agent_priority", {})
+        if agent_priority is not None and not isinstance(agent_priority, dict):
+            raise ValueError("agent_priority must be an object")
+        if isinstance(agent_priority, dict):
+            base_bindings = {_base_event_key(ev) for ev in data["event_bindings"]}
+            for scope, events in agent_priority.items():
+                if scope not in ("claude", "codex"):
+                    raise ValueError(f"unsupported agent_priority scope {scope!r}")
+                if not isinstance(events, list):
+                    raise ValueError(f"agent_priority.{scope} must be a list")
+                seen = set()
+                for ev in events:
+                    if not isinstance(ev, str) or not ev:
+                        raise ValueError(f"agent_priority.{scope} contains invalid event {ev!r}")
+                    base = _base_event_key(ev)
+                    if base in seen:
+                        raise ValueError(f"agent_priority.{scope} has duplicate event {base!r}")
+                    seen.add(base)
+                    if base not in base_bindings:
+                        raise ValueError(f"agent_priority.{scope} event {base!r} has no binding")
 
     # ---------- apply parsed config ----------
     def _apply(self, data: dict) -> None:
@@ -382,7 +442,16 @@ class Config:
                                                 bool(e.get("builtin")), frames)
             self._event_bindings = dict(data["event_bindings"])
             self._event_priority = list(data["event_priority"])
+            agent_priority = data.get("agent_priority") or {}
+            self._agent_priority = {
+                scope: [_base_event_key(ev) for ev in agent_priority.get(scope, self._event_priority)]
+                for scope in ("claude", "codex")
+            }
             self._priority_idx = {ev: i for i, ev in enumerate(self._event_priority)}
+            self._agent_priority_idx = {
+                scope: {ev: i for i, ev in enumerate(events)}
+                for scope, events in self._agent_priority.items()
+            }
 
     # ---------- accessors ----------
     def get_effect(self, effect_id: str) -> Effect | None:
@@ -393,10 +462,21 @@ class Config:
         with self._lock:
             return self._event_bindings.get(event)
 
-    def priority_index(self, event: str) -> int:
+    def priority_index(self, event: str, agent: str = "unknown") -> int:
         """Lower index = higher priority. Unknown events sort last."""
         with self._lock:
-            return self._priority_idx.get(event, 10**9)
+            base = _base_event_key(event)
+            scope = agent if agent in ("claude", "codex") else _agent_from_event_key(event)
+            if scope in ("claude", "codex"):
+                scoped = self._agent_priority_idx.get(scope, {}).get(base)
+                if scoped is not None:
+                    return scoped
+            exact = self._priority_idx.get(event)
+            if exact is not None:
+                return exact
+            if base != event:
+                return self._priority_idx.get(base, 10**9)
+            return 10**9
 
     def to_dict(self) -> dict:
         with self._lock:
@@ -405,6 +485,7 @@ class Config:
                 "effects": [e.to_dict() for e in self._effects.values()],
                 "event_bindings": dict(self._event_bindings),
                 "event_priority": list(self._event_priority),
+                "agent_priority": {scope: list(events) for scope, events in self._agent_priority.items()},
             }
 
     # ---------- change notification ----------
@@ -439,7 +520,7 @@ class Sessions:
         self._on_change = on_change
         threading.Thread(target=self._sweep, daemon=True, name="sessions-sweep").start()
 
-    def update(self, sid: str, event: str, cwd: str | None) -> None:
+    def update(self, sid: str, event: str, cwd: str | None, agent: str = "unknown") -> None:
         dropped: tuple[str, float] | None = None
         with self._lock:
             entry = self._map.get(sid) or {}
@@ -459,6 +540,7 @@ class Sessions:
                     entry["cwd"] = cwd
                 elif "cwd" not in entry:
                     entry["cwd"] = None
+                entry["agent"] = agent or "unknown"
                 self._map[sid] = entry
 
         if dropped is not None:
@@ -476,15 +558,29 @@ class Sessions:
             self._on_change()
         return existed
 
-    def aggregate_effect_id(self) -> str:
-        """Return the effect_id of the session with highest-priority event."""
+    def _winner(self, agent_filter: str = "all") -> dict | None:
         with self._lock:
             entries = list(self._map.values())
+        if agent_filter in ("claude", "codex"):
+            entries = [e for e in entries if e.get("agent") == agent_filter]
         if not entries:
+            return None
+        return min(entries, key=lambda e: self._cfg.priority_index(e["event"], e.get("agent") or "unknown"))
+
+    def aggregate_effect_id(self, agent_filter: str = "all") -> str:
+        """Return the effect_id of the session with highest-priority event."""
+        winner = self._winner(agent_filter)
+        if winner is None:
             return Config.OFF_EFFECT_ID
-        winner = min(entries, key=lambda e: self._cfg.priority_index(e["event"]))
         eid = self._cfg.effect_for_event(winner["event"])
         return eid or Config.OFF_EFFECT_ID
+
+    def aggregate_agent(self, agent_filter: str = "all") -> str:
+        """Return the agent source of the session currently controlling the light."""
+        winner = self._winner(agent_filter)
+        if winner is None:
+            return "none"
+        return winner.get("agent") or "unknown"
 
     def snapshot(self) -> list[dict]:
         with self._lock:
@@ -493,6 +589,7 @@ class Sessions:
                     "sid": sid,
                     "event": e["event"],
                     "effect_id": self._cfg.effect_for_event(e["event"]) or Config.OFF_EFFECT_ID,
+                    "agent": e.get("agent") or "unknown",
                     "cwd": e.get("cwd"),
                     "age_s": int(time.time() - e["last_seen"]),
                 }
@@ -586,6 +683,25 @@ class Scheduler:
 
 _clients_lock = threading.Lock()
 _clients: list[queue.Queue] = []
+_agent_filter_lock = threading.Lock()
+_agent_filter = "all"
+
+
+def get_agent_filter() -> str:
+    with _agent_filter_lock:
+        return _agent_filter
+
+
+def set_agent_filter(scope: str) -> bool:
+    global _agent_filter
+    if scope not in AGENT_SCOPES:
+        return False
+    with _agent_filter_lock:
+        changed = scope != _agent_filter
+        _agent_filter = scope
+    if changed:
+        _on_sessions_change()
+    return True
 
 
 def _broadcast(payload: str) -> None:
@@ -600,10 +716,13 @@ def _broadcast(payload: str) -> None:
 
 def _snapshot_json(effect_id: str, leds: list[int]) -> str:
     eff = config.get_effect(effect_id)
+    agent_filter = get_agent_filter()
     return json.dumps(
         {
             "effect_id": effect_id,
             "effect_name": eff.name if eff else effect_id,
+            "agent": sessions.aggregate_agent(agent_filter),
+            "agent_filter": agent_filter,
             "l": leds,
             "hid": _hid_status,
             "sessions": sessions.snapshot(),
@@ -619,7 +738,7 @@ def _emit_snapshot(effect_id: str, leds: list[int]) -> None:
 
 
 def _on_sessions_change() -> None:
-    eid = sessions.aggregate_effect_id()
+    eid = sessions.aggregate_effect_id(get_agent_filter())
     scheduler.set_effect(eid)
     _emit_snapshot(scheduler.target_id, scheduler.leds)
 
@@ -644,14 +763,26 @@ threading.Thread(target=_hid_health_loop, daemon=True, name="hid-health").start(
 MANUAL_SID = "__manual__"
 
 
+ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}", "127.0.0.1", "localhost"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): return
+
+    def _path(self) -> str:
+        return urlparse(self.path).path
+
+    def _host_ok(self) -> bool:
+        # Defends against DNS-rebinding: a malicious page can't spoof the Host header,
+        # so we accept only loopback names. Without this, a rebound DNS name could
+        # POST to /api/config or read /stream from off-host JavaScript.
+        host = (self.headers.get("Host") or "").strip().lower()
+        return host in ALLOWED_HOSTS
 
     def _send(self, code: int, body: bytes = b"", ctype: str = "text/plain") -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -661,16 +792,23 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, body, "application/json; charset=utf-8")
 
     def do_GET(self):
-        if self.path == "/":
+        if not self._host_ok():
+            self._send(403, b"forbidden host")
+            return
+        path = self._path()
+        if path == "/":
             self._send(200, INDEX_HTML.encode(), "text/html; charset=utf-8")
-        elif self.path == "/stream":
+        elif path == "/stream":
             self._stream()
-        elif self.path == "/api/config":
+        elif path == "/api/config":
             self._send_json(200, config.to_dict())
-        elif self.path == "/api/status":
+        elif path == "/api/status":
+            agent_filter = get_agent_filter()
             self._send_json(200, {
                 "hid": _hid_status,
                 "effect_id": scheduler.target_id,
+                "agent": sessions.aggregate_agent(agent_filter),
+                "agent_filter": agent_filter,
                 "leds": scheduler.leds,
                 "sessions": sessions.snapshot(),
             })
@@ -678,15 +816,21 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b"not found")
 
     def do_POST(self):
-        if self.path == "/event":
+        if not self._host_ok():
+            self._send(403, b"forbidden host")
+            return
+        path = self._path()
+        if path == "/event":
             self._do_event()
-        elif self.path == "/hook":
+        elif path == "/hook":
             self._do_hook()
-        elif self.path == "/api/config":
+        elif path == "/api/config":
             self._do_save_config()
-        elif self.path == "/api/config/reset":
+        elif path == "/api/config/reset":
             config.reset_to_defaults()
             self._send_json(200, {"ok": True, "config": config.to_dict()})
+        elif path == "/api/agent-filter":
+            self._do_agent_filter()
         else:
             self._send(404, b"not found")
 
@@ -720,11 +864,39 @@ class Handler(BaseHTTPRequestHandler):
                 if eid == effect_id:
                     synth_event = ev
                     break
-            sessions.update(MANUAL_SID, synth_event, cwd="(manual)")
+            sessions.update(MANUAL_SID, synth_event, cwd="(manual)", agent="manual")
         self._send(204)
 
     # ---------- /hook (agent hook event) ----------
-    def _binding_key(self, data: dict, event: str, tool: str) -> str | None:
+    def _agent_source(self, data: dict, event: str) -> str:
+        qs = parse_qs(urlparse(self.path).query)
+        candidates = [
+            qs.get("agent", [""])[0],
+            qs.get("source", [""])[0],
+            data.get("agent_signal_source"),
+            data.get("agent"),
+            data.get("client"),
+            data.get("app"),
+            data.get("source_agent"),
+        ]
+        for raw in candidates:
+            text = str(raw or "").strip().lower()
+            if "codex" in text:
+                return "codex"
+            if "claude" in text:
+                return "claude"
+
+        if event in CODEX_ONLY_EVENTS:
+            return "codex"
+        if event in CLAUDE_ONLY_EVENTS:
+            return "claude"
+        if data.get("agent_type") is not None or data.get("trigger") is not None:
+            return "codex"
+        if data.get("transcript_path") is not None:
+            return "claude"
+        return "unknown"
+
+    def _binding_key(self, data: dict, event: str, tool: str, agent: str) -> str | None:
         matcher_value = ""
         if event in ("PreToolUse", "PostToolUse", "PermissionRequest"):
             matcher_value = tool
@@ -737,7 +909,11 @@ class Handler(BaseHTTPRequestHandler):
 
         candidates = []
         if matcher_value:
+            if agent in ("claude", "codex"):
+                candidates.append(f"{agent}/{event}:{matcher_value}")
             candidates.append(f"{event}:{matcher_value}")
+        if agent in ("claude", "codex"):
+            candidates.append(f"{agent}/{event}")
         candidates.append(event)
 
         for key in candidates:
@@ -760,22 +936,43 @@ class Handler(BaseHTTPRequestHandler):
         event = (data.get("hook_event_name") or "").strip()
         tool = (data.get("tool_name") or "").strip()
         cwd = data.get("cwd")
+        agent = self._agent_source(data, event)
         if not sid or not event:
             self._send(400, b"missing session_id or hook_event_name")
             return
         if event == "SessionEnd":
             removed = sessions.remove(sid)
-            print(f"  ← {event:<24} {sid[:8]} (removed={removed})", flush=True)
+            print(f"  ← {event:<24} {sid[:8]} [{agent}] (removed={removed})", flush=True)
             self._send(204)
             return
-        key = self._binding_key(data, event, tool)
+        key = self._binding_key(data, event, tool, agent)
         # Drop events with no binding to avoid noise.
         if key is None:
             self._send(204)
             return
-        sessions.update(sid, key, cwd=cwd)
-        print(f"  ← {key:<32} {sid[:8]} (agg={sessions.aggregate_effect_id()})", flush=True)
+        sessions.update(sid, key, cwd=cwd, agent=agent)
+        print(f"  ← {key:<32} {sid[:8]} [{agent}] "
+              f"(agg={sessions.aggregate_effect_id(get_agent_filter())})", flush=True)
         self._send(204)
+
+    # ---------- /api/agent-filter ----------
+    def _do_agent_filter(self):
+        n = int(self.headers.get("Content-Length", "0") or 0)
+        scope = ""
+        if n > 0:
+            try:
+                data = json.loads(self.rfile.read(n))
+                scope = (data.get("scope") or data.get("agent_filter") or "").strip().lower()
+            except (ValueError, UnicodeDecodeError):
+                self._send_json(400, {"ok": False, "error": "bad json"})
+                return
+        if not scope:
+            qs = parse_qs(urlparse(self.path).query)
+            scope = (qs.get("scope", [""])[0] or qs.get("agent_filter", [""])[0]).strip().lower()
+        if not set_agent_filter(scope):
+            self._send_json(400, {"ok": False, "error": "scope must be all, claude, or codex"})
+            return
+        self._send_json(200, {"ok": True, "agent_filter": get_agent_filter()})
 
     # ---------- /api/config (save) ----------
     def _do_save_config(self):
@@ -802,7 +999,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
         q: queue.Queue = queue.Queue(maxsize=64)
@@ -973,6 +1169,18 @@ INDEX_HTML = r"""<!doctype html>
   }
   .binding-row .ev { font: 12px ui-monospace, "SF Mono", monospace; color: var(--fg); }
   .binding-row .arrow { color: var(--mute); }
+  .agent-switch {
+    display: flex; overflow: hidden; border: 1px solid var(--line2); border-radius: 6px;
+    background: #111;
+  }
+  .agent-switch button {
+    border: 0; border-right: 1px solid var(--line2); border-radius: 0;
+    background: transparent; color: var(--dim); padding: 4px 8px; min-width: 54px;
+    font: 11px ui-monospace, "SF Mono", monospace;
+  }
+  .agent-switch button:last-child { border-right: 0; }
+  .agent-switch button:hover { color: var(--fg); background: #242424; }
+  .agent-switch button.active { background: var(--accent); color: #fff; }
   .binding-slot {
     min-height: 38px; padding: 4px; border-radius: 5px;
     border: 1.5px dashed var(--line2);
@@ -980,9 +1188,14 @@ INDEX_HTML = r"""<!doctype html>
     color: var(--mute); font-size: 11px;
   }
   .binding-slot.has { border-style: solid; border-color: var(--line2); }
+  .binding-slot.inherited { border-style: dashed; background: rgba(255,255,255,0.025); }
   .binding-slot.drop-hover { border-color: var(--accent); background: rgba(74, 144, 226, 0.06); color: var(--accent); }
   .binding-slot.has .effect-card {
     width: 100%; cursor: default; margin: 0;
+  }
+  .binding-slot.inherited .effect-card { opacity: 0.62; }
+  .binding-slot .inherit {
+    margin-left: 6px; color: var(--mute); font: 10px ui-monospace, "SF Mono", monospace;
   }
   .binding-slot .clear {
     margin-left: 6px; cursor: pointer; color: var(--mute); font-size: 13px;
@@ -1002,6 +1215,9 @@ INDEX_HTML = r"""<!doctype html>
   .priority-row .pri { font: 10px ui-monospace, "SF Mono", monospace; color: var(--mute); }
   .priority-row.insert-before { box-shadow: 0 -2px 0 0 var(--accent); }
   .priority-row.insert-after  { box-shadow: 0 2px 0 0 var(--accent); }
+  .priority-empty {
+    color: var(--mute); padding: 12px; text-align: center; font: 11px ui-monospace, "SF Mono", monospace;
+  }
 
   /* ----- Sessions debug ----- */
   .sessions-panel {
@@ -1014,11 +1230,19 @@ INDEX_HTML = r"""<!doctype html>
   }
   .sessions-panel .row {
     padding: 6px 12px; display: grid;
-    grid-template-columns: minmax(160px, auto) 1fr 80px 50px;
+    grid-template-columns: 82px minmax(160px, auto) 1fr 80px 50px;
     gap: 10px; align-items: center; border-bottom: 1px solid #222;
   }
   .sessions-panel .row:last-child { border-bottom: none; }
   .sessions-panel .empty { padding: 12px; color: var(--dim); text-align: center; font-style: italic; }
+  .sessions-panel .agent {
+    color: #ddd; background: rgba(74,144,226,0.12); border: 1px solid rgba(74,144,226,0.22);
+    padding: 2px 8px; border-radius: 4px; font-size: 10px; text-align: center; text-transform: uppercase;
+  }
+  .sessions-panel .agent.claude { background: rgba(255,184,0,0.12); border-color: rgba(255,184,0,0.24); }
+  .sessions-panel .agent.codex { background: rgba(74,144,226,0.14); border-color: rgba(74,144,226,0.28); }
+  .sessions-panel .agent.manual { background: rgba(33,214,90,0.10); border-color: rgba(33,214,90,0.22); }
+  .sessions-panel .agent.unknown { color: #888; background: rgba(255,255,255,0.04); border-color: var(--line2); }
   .sessions-panel .badge { color: #ccc; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 4px; font-size: 11px; }
   .sessions-panel .cwd { color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
   .sessions-panel .sid { color: #666; }
@@ -1167,6 +1391,8 @@ INDEX_HTML = r"""<!doctype html>
   <div class="header-status" id="status">
     <span><span class="dot"></span>hid: <span id="hidLbl">—</span></span>
     <span>effect: <span id="effLbl">—</span></span>
+    <span>agent: <span id="agentLbl">—</span></span>
+    <span>filter: <span id="filterLbl">All</span></span>
     <span>sessions: <span id="cntLbl">0</span></span>
   </div>
 </header>
@@ -1209,7 +1435,11 @@ INDEX_HTML = r"""<!doctype html>
   <section class="col">
     <header>
       <h2>Event Bindings</h2>
-      <span class="hint">drop effect into slot</span>
+      <div class="agent-switch" id="agentSwitch" aria-label="Agent binding scope">
+        <button type="button" data-agent-scope="all" class="active">All</button>
+        <button type="button" data-agent-scope="claude">Claude</button>
+        <button type="button" data-agent-scope="codex">Codex</button>
+      </div>
     </header>
     <div class="body" id="bindingsList"></div>
   </section>
@@ -1217,7 +1447,7 @@ INDEX_HTML = r"""<!doctype html>
   <section class="col">
     <header>
       <h2>Priority &nbsp;<span style="color:var(--mute);font-weight:400">(top = highest)</span></h2>
-      <span class="hint">drag rows</span>
+      <span class="hint" id="priorityScopeLbl">All</span>
     </header>
     <div class="body" id="priorityList"></div>
   </section>
@@ -1319,6 +1549,8 @@ INDEX_HTML = r"""<!doctype html>
   const state = {
     saved: null,      // last server-confirmed config
     draft: null,      // local edits (POST'd on Save)
+    agentScope: "all",
+    baseEvents: [],
   };
 
   function deepClone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -1327,6 +1559,136 @@ INDEX_HTML = r"""<!doctype html>
 
   function updateActionsBar() {
     document.getElementById("actionsBar").classList.toggle("hidden", !isDirty());
+  }
+
+  function keyScope(key) {
+    if (key.startsWith("claude/")) return "claude";
+    if (key.startsWith("codex/")) return "codex";
+    return "all";
+  }
+
+  function baseEventKey(key) {
+    return key.replace(/^(claude|codex)\//, "");
+  }
+
+  function scopedEventKey(base, scope = state.agentScope) {
+    return scope === "all" ? base : `${scope}/${base}`;
+  }
+
+  function collectBaseEvents(cfg) {
+    const out = new Set();
+    if (!cfg) return [];
+    Object.keys(cfg.event_bindings || {}).forEach(k => out.add(baseEventKey(k)));
+    (cfg.event_priority || []).forEach(k => out.add(baseEventKey(k)));
+    const agentPriority = cfg.agent_priority || {};
+    Object.values(agentPriority).forEach(list => {
+      if (Array.isArray(list)) list.forEach(k => out.add(baseEventKey(k)));
+    });
+    return Array.from(out).filter(Boolean);
+  }
+
+  function knownBaseEvents() {
+    const out = new Set(state.baseEvents);
+    collectBaseEvents(state.draft).forEach(k => out.add(k));
+    return Array.from(out).filter(Boolean);
+  }
+
+  function globalBaseEvents() {
+    const out = new Set();
+    Object.keys(state.draft.event_bindings || {}).forEach(k => {
+      if (keyScope(k) === "all") out.add(k);
+    });
+    (state.draft.event_priority || []).forEach(k => {
+      if (keyScope(k) === "all") out.add(k);
+    });
+    return Array.from(out).filter(Boolean);
+  }
+
+  function bindingBaseEvents(scope = state.agentScope) {
+    if (scope === "all") return globalBaseEvents();
+    const out = new Set(globalBaseEvents());
+    Object.keys(state.draft.event_bindings || {}).forEach(k => {
+      if (keyScope(k) === scope) out.add(baseEventKey(k));
+    });
+    const agentPriority = state.draft.agent_priority || {};
+    const scopedPriority = agentPriority[scope];
+    if (Array.isArray(scopedPriority)) {
+      scopedPriority.forEach(k => out.add(baseEventKey(k)));
+    }
+    return Array.from(out).filter(Boolean);
+  }
+
+  function ensureAgentPriority() {
+    if (!state.draft.agent_priority || typeof state.draft.agent_priority !== "object") {
+      state.draft.agent_priority = {};
+    }
+    for (const scope of ["claude", "codex"]) {
+      if (!Array.isArray(state.draft.agent_priority[scope])) {
+        state.draft.agent_priority[scope] = state.draft.event_priority.map(baseEventKey);
+      } else {
+        state.draft.agent_priority[scope] = state.draft.agent_priority[scope].map(baseEventKey);
+      }
+    }
+  }
+
+  function priorityList(scope = state.agentScope) {
+    if (scope === "all") return state.draft.event_priority;
+    ensureAgentPriority();
+    return state.draft.agent_priority[scope];
+  }
+
+  function normalizePriorityList(scope = state.agentScope) {
+    const list = priorityList(scope);
+    const seen = new Set();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const base = baseEventKey(list[i]);
+      if (!base || seen.has(base)) list.splice(i, 1);
+      else {
+        list[i] = base;
+        seen.add(base);
+      }
+    }
+    const candidates = scope === "all" ? globalBaseEvents() : bindingBaseEvents(scope);
+    for (const event of candidates) {
+      if (!seen.has(event)) {
+        list.push(event);
+        seen.add(event);
+      }
+    }
+    return list;
+  }
+
+  function priorityIndexFor(key, scope = state.agentScope) {
+    const base = baseEventKey(key);
+    const pri = normalizePriorityList(scope);
+    const idx = pri.indexOf(base);
+    return idx >= 0 ? idx : 9999;
+  }
+
+  function insertPriorityForEvent(key) {
+    const base = baseEventKey(key);
+    const pri = normalizePriorityList(keyScope(key));
+    if (pri.includes(base)) return;
+    let insertAfter = -1;
+    for (let i = 0; i < pri.length; i++) {
+      if (pri[i] === base) insertAfter = i;
+    }
+    if (insertAfter >= 0) pri.splice(insertAfter + 1, 0, base);
+    else pri.push(base);
+  }
+
+  function bindingForBase(base, scope = state.agentScope) {
+    const ownKey = scopedEventKey(base, scope);
+    const hasOwn = Object.prototype.hasOwnProperty.call(state.draft.event_bindings, ownKey);
+    const globalEid = state.draft.event_bindings[base];
+    const eid = hasOwn ? state.draft.event_bindings[ownKey] : globalEid;
+    return { key: ownKey, eid, inherited: scope !== "all" && !hasOwn && !!globalEid };
+  }
+
+  function visiblePriorityEvents() {
+    return normalizePriorityList(state.agentScope).filter(base =>
+      bindingForBase(base, state.agentScope).eid
+    );
   }
 
   // ---------- Toast & modal ----------
@@ -1477,9 +1839,7 @@ INDEX_HTML = r"""<!doctype html>
       if (!eid) return;
       const event = slot.dataset.event;
       state.draft.event_bindings[event] = eid;
-      if (!state.draft.event_priority.includes(event)) {
-        state.draft.event_priority.push(event);
-      }
+      insertPriorityForEvent(event);
       renderBindings();
       renderPriority();
       updateActionsBar();
@@ -1519,7 +1879,7 @@ INDEX_HTML = r"""<!doctype html>
       if (!movedEvent || movedEvent === row.dataset.event) return;
       const rect = row.getBoundingClientRect();
       const before = e.clientY < rect.top + rect.height / 2;
-      const list = state.draft.event_priority;
+      const list = normalizePriorityList(state.agentScope);
       const fromIdx = list.indexOf(movedEvent);
       if (fromIdx < 0) return;
       list.splice(fromIdx, 1);
@@ -1550,43 +1910,54 @@ INDEX_HTML = r"""<!doctype html>
   function renderBindings() {
     const list = document.getElementById("bindingsList");
     list.innerHTML = "";
-    // sort by priority order, then alphabetical for any event not in priority
-    const priOrder = state.draft.event_priority;
-    const events = Object.keys(state.draft.event_bindings);
+    const scope = state.agentScope;
+    const events = bindingBaseEvents(scope);
     events.sort((a, b) => {
-      const ia = priOrder.indexOf(a), ib = priOrder.indexOf(b);
-      const ka = ia < 0 ? 9999 : ia;
-      const kb = ib < 0 ? 9999 : ib;
+      const ka = priorityIndexFor(scopedEventKey(a, scope));
+      const kb = priorityIndexFor(scopedEventKey(b, scope));
       return ka - kb || a.localeCompare(b);
     });
-    for (const event of events) {
+    for (const base of events) {
+      const event = scopedEventKey(base, scope);
+      const hasOwn = Object.prototype.hasOwnProperty.call(state.draft.event_bindings, event);
+      const inheritedEid = scope === "all" ? null : state.draft.event_bindings[base];
+      const eid = hasOwn ? state.draft.event_bindings[event] : inheritedEid;
+      const inherited = !hasOwn && !!inheritedEid;
+      const effect = state.draft.effects.find(e => e.id === eid);
       const row = document.createElement("div");
       row.className = "binding-row";
-      const eid = state.draft.event_bindings[event];
-      const effect = state.draft.effects.find(e => e.id === eid);
       const slot = document.createElement("div");
-      slot.className = "binding-slot" + (effect ? " has" : "");
+      slot.className = "binding-slot" + (effect ? " has" : "") + (inherited ? " inherited" : "");
       slot.dataset.event = event;
+      slot.dataset.baseEvent = base;
       if (effect) {
         const inner = renderEffectCard(effect, { draggable: false });
         slot.appendChild(inner);
-        const x = document.createElement("span");
-        x.className = "clear";
-        x.title = "Unbind this event";
-        x.textContent = "✕";
-        x.addEventListener("click", () => {
-          delete state.draft.event_bindings[event];
-          state.draft.event_priority = state.draft.event_priority.filter(e => e !== event);
-          renderBindings();
-          renderPriority();
-          updateActionsBar();
-        });
-        slot.appendChild(x);
+        if (inherited) {
+          const inheritedLabel = document.createElement("span");
+          inheritedLabel.className = "inherit";
+          inheritedLabel.title = "Inherited from All";
+          inheritedLabel.textContent = "All";
+          slot.appendChild(inheritedLabel);
+        } else {
+          const x = document.createElement("span");
+          x.className = "clear";
+          x.title = scope === "all" ? "Unbind this event" : "Clear this agent override";
+          x.textContent = "✕";
+          x.addEventListener("click", () => {
+            delete state.draft.event_bindings[event];
+            state.draft.event_priority = state.draft.event_priority.filter(e => e !== event);
+            renderBindings();
+            renderPriority();
+            updateActionsBar();
+          });
+          slot.appendChild(x);
+        }
       } else {
         slot.textContent = "drop effect here";
       }
       setupSlotDrop(slot);
-      row.innerHTML = `<div class="ev">${escapeHTML(event)}</div><div class="arrow">→</div>`;
+      row.innerHTML = `<div class="ev">${escapeHTML(base)}</div><div class="arrow">→</div>`;
       row.appendChild(slot);
       list.appendChild(row);
     }
@@ -1595,22 +1966,61 @@ INDEX_HTML = r"""<!doctype html>
   function renderPriority() {
     const list = document.getElementById("priorityList");
     list.innerHTML = "";
-    state.draft.event_priority.forEach((event, i) => {
+    const events = visiblePriorityEvents();
+    document.getElementById("priorityScopeLbl").textContent = agentLabel(state.agentScope);
+    if (events.length === 0) {
+      list.innerHTML = '<div class="priority-empty">no explicit bindings in this scope</div>';
+      return;
+    }
+    events.forEach((event, i) => {
       const row = document.createElement("div");
       row.className = "priority-row";
       row.draggable = true;
       row.dataset.event = event;
       row.innerHTML = `
         <div class="handle">≡</div>
-        <div class="ev">${escapeHTML(event)}</div>
-        <div class="pri">${i === 0 ? "highest" : i === state.draft.event_priority.length - 1 ? "lowest" : "#" + (i + 1)}</div>
+        <div class="ev">${escapeHTML(baseEventKey(event))}</div>
+        <div class="pri">${i === 0 ? "highest" : i === events.length - 1 ? "lowest" : "#" + (i + 1)}</div>
       `;
       setupPriorityDrag(row);
       list.appendChild(row);
     });
   }
 
+  function renderAgentSwitch() {
+    document.querySelectorAll("[data-agent-scope]").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.agentScope === state.agentScope);
+    });
+  }
+
+  async function setAgentScope(scope) {
+    if (!["all", "claude", "codex"].includes(scope)) return;
+    state.agentScope = scope;
+    renderAgentSwitch();
+    renderBindings();
+    renderPriority();
+    document.getElementById("filterLbl").textContent = agentLabel(scope);
+    try {
+      const r = await fetch("/api/agent-filter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "unknown");
+      if (j.agent_filter && j.agent_filter !== state.agentScope) {
+        state.agentScope = j.agent_filter;
+        renderAgentSwitch();
+        renderBindings();
+        renderPriority();
+      }
+    } catch (e) {
+      toast("Agent filter failed: " + e.message, "err");
+    }
+  }
+
   function renderAll() {
+    renderAgentSwitch();
     renderEffects();
     renderBindings();
     renderPriority();
@@ -1813,6 +2223,21 @@ INDEX_HTML = r"""<!doctype html>
     return p;
   }
 
+  function agentLabel(agent) {
+    const key = (agent || "unknown").toLowerCase();
+    if (key === "all") return "All";
+    if (key === "claude") return "Claude";
+    if (key === "codex") return "Codex";
+    if (key === "manual") return "Manual";
+    if (key === "none") return "—";
+    return "Unknown";
+  }
+
+  function agentClass(agent) {
+    const key = (agent || "unknown").toLowerCase();
+    return ["claude", "codex", "manual"].includes(key) ? key : "unknown";
+  }
+
   function renderSessions(list) {
     document.getElementById("cntLbl").textContent = list.length;
     document.getElementById("cntInline").textContent = list.length;
@@ -1824,8 +2249,11 @@ INDEX_HTML = r"""<!doctype html>
     box.innerHTML = list.map(s => {
       const sid = s.sid === "__manual__" ? "manual" : s.sid.slice(0, 8);
       const age = s.age_s < 60 ? `${s.age_s}s` : `${Math.floor(s.age_s/60)}m`;
+      const agent = s.agent || "unknown";
+      const eventLabel = baseEventKey(s.event || s.effect_id);
       return `<div class="row">
-        <span class="badge">${escapeHTML(s.event || s.effect_id)}</span>
+        <span class="agent ${agentClass(agent)}">${escapeHTML(agentLabel(agent))}</span>
+        <span class="badge">${escapeHTML(eventLabel)}</span>
         <span class="cwd" title="${escapeHTML(s.cwd || '')}">${escapeHTML(shortenCwd(s.cwd))}</span>
         <span class="sid">${escapeHTML(sid)}</span>
         <span class="age">${age}</span>
@@ -1849,7 +2277,15 @@ INDEX_HTML = r"""<!doctype html>
         liveLeds = m.l;
         const hid = m.hid || "—";
         hidConnected = hid.startsWith("connected");
+        if (m.agent_filter && m.agent_filter !== state.agentScope) {
+          state.agentScope = m.agent_filter;
+          renderAgentSwitch();
+          renderBindings();
+          renderPriority();
+        }
         document.getElementById("effLbl").textContent = m.effect_name || m.effect_id;
+        document.getElementById("agentLbl").textContent = agentLabel(m.agent);
+        document.getElementById("filterLbl").textContent = agentLabel(m.agent_filter || state.agentScope);
         document.getElementById("hidLbl").textContent = hid;
         status.classList.toggle("ok", hidConnected);
         renderSessions(m.sessions || []);
@@ -1862,6 +2298,7 @@ INDEX_HTML = r"""<!doctype html>
     const r = await fetch("/api/config");
     state.saved = await r.json();
     state.draft = deepClone(state.saved);
+    state.baseEvents = collectBaseEvents(state.saved);
     renderAll();
   }
 
@@ -1875,6 +2312,7 @@ INDEX_HTML = r"""<!doctype html>
       const j = await r.json();
       if (j.ok) {
         state.saved = deepClone(state.draft);
+        state.baseEvents = collectBaseEvents(state.saved);
         toast("Saved.", "ok");
         updateActionsBar();
       } else {
@@ -1898,6 +2336,7 @@ INDEX_HTML = r"""<!doctype html>
       if (j.ok) {
         state.saved = j.config;
         state.draft = deepClone(state.saved);
+        state.baseEvents = collectBaseEvents(state.saved);
         renderAll();
         toast("Defaults restored.", "ok");
       } else {
@@ -1918,10 +2357,14 @@ INDEX_HTML = r"""<!doctype html>
   document.getElementById("discardBtn").addEventListener("click", async () => {
     if (!isDirty()) return;
     state.draft = deepClone(state.saved);
+    state.baseEvents = collectBaseEvents(state.saved);
     renderAll();
     toast("Discarded.", "ok");
   });
   document.getElementById("resetBtn").addEventListener("click", resetConfig);
+  document.querySelectorAll("[data-agent-scope]").forEach(btn => {
+    btn.addEventListener("click", () => setAgentScope(btn.dataset.agentScope));
+  });
 
   // Editor wiring
   document.getElementById("addFrameBtn").addEventListener("click", () => {

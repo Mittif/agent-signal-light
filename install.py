@@ -5,11 +5,14 @@ Run once to:
   • install hidapi (pip --user)
   • copy default config to ~/.agent-signal-light/config.json
   • register an auto-start service so the daemon runs at login + respawns on crash
+  • auto-wire Claude Code and Codex hooks (with backups), or print snippets
   • verify the daemon is up
 
 Re-runnable. Pass --uninstall to undo. Pass --uninstall --purge to also wipe data.
+Pass --no-hooks to skip auto-wiring the agent hooks.
 
     python3 install.py
+    python3 install.py --no-hooks
     python3 install.py --uninstall [--purge]
 """
 from __future__ import annotations
@@ -17,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,9 +32,10 @@ PROJECT_DIR = Path(__file__).resolve().parent
 APP_NAME = "Agent Signal Light"
 APP_SLUG = "agent-signal-light"
 DATA_DIR = Path.home() / f".{APP_SLUG}"
-LEGACY_DATA_DIR = Path.home() / ".claude-light"
-LABEL = "com.mitty.agent-signal-light"
-LEGACY_LABEL = "com.mitty.claude-light"
+LABEL = "dev.agent-signal-light"
+# Removed in a future release. Cleaned up on install/uninstall so machines that ran
+# the original "com.mitty.*" build don't end up with two services fighting for the port.
+LEGACY_LABEL = "com.mitty.agent-signal-light"
 DAEMON_URL = "http://127.0.0.1:7878/api/status"
 
 
@@ -67,9 +72,6 @@ def setup_data_dir() -> None:
     user_cfg = DATA_DIR / "config.json"
     if user_cfg.exists():
         ok(f"existing config kept ({user_cfg})")
-    elif (LEGACY_DATA_DIR / "config.json").exists():
-        shutil.copy(LEGACY_DATA_DIR / "config.json", user_cfg)
-        ok(f"migrated existing config -> {user_cfg}")
     else:
         shutil.copy(PROJECT_DIR / "config.default.json", user_cfg)
         ok(f"wrote default config -> {user_cfg}")
@@ -77,7 +79,7 @@ def setup_data_dir() -> None:
 
 def stop_running_daemons() -> None:
     server = str(PROJECT_DIR / "server.py")
-    for pattern in (server, "agent-signal-light/server.py", "claude-light/server.py"):
+    for pattern in (server, "agent-signal-light/server.py"):
         subprocess.run(["pkill", "-f", pattern], check=False)
 
 
@@ -113,14 +115,19 @@ def macos_plist_text() -> str:
 """
 
 
+def _remove_macos_plist(label: str, *, quiet: bool = False) -> None:
+    plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if plist.exists():
+        subprocess.run(["launchctl", "unload", str(plist)], check=False, stderr=subprocess.DEVNULL)
+        plist.unlink()
+        if not quiet:
+            ok(f"removed {plist}")
+
+
 def install_macos() -> None:
     plist = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-    legacy_plist = Path.home() / "Library" / "LaunchAgents" / f"{LEGACY_LABEL}.plist"
     plist.parent.mkdir(parents=True, exist_ok=True)
-    if legacy_plist.exists():
-        subprocess.run(["launchctl", "unload", str(legacy_plist)], check=False, stderr=subprocess.DEVNULL)
-        legacy_plist.unlink()
-        ok(f"removed legacy LaunchAgent -> {legacy_plist}")
+    _remove_macos_plist(LEGACY_LABEL, quiet=True)
     plist.write_text(macos_plist_text())
     ok(f"wrote LaunchAgent -> {plist}")
     stop_running_daemons()
@@ -131,11 +138,7 @@ def install_macos() -> None:
 
 def uninstall_macos() -> None:
     for label in (LABEL, LEGACY_LABEL):
-        plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
-        if plist.exists():
-            subprocess.run(["launchctl", "unload", str(plist)], check=False, stderr=subprocess.DEVNULL)
-            plist.unlink()
-            ok(f"removed {plist}")
+        _remove_macos_plist(label)
     stop_running_daemons()
 
 
@@ -153,11 +156,6 @@ def install_windows() -> None:
     log = DATA_DIR / "daemon.log"
 
     # VBS shim: starts python hidden, redirects output to the log.
-    legacy_vbs = startup / "claude-light.vbs"
-    if legacy_vbs.exists():
-        legacy_vbs.unlink()
-        ok(f"removed legacy startup launcher -> {legacy_vbs}")
-
     vbs = startup / f"{APP_SLUG}.vbs"
     vbs.write_text(
         'Set sh = CreateObject("WScript.Shell")\r\n'
@@ -194,11 +192,10 @@ def install_windows() -> None:
 
 def uninstall_windows() -> None:
     startup = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
-    for name in (f"{APP_SLUG}.vbs", "claude-light.vbs"):
-        vbs = startup / name
-        if vbs.exists():
-            vbs.unlink()
-            ok(f"removed {vbs}")
+    vbs = startup / f"{APP_SLUG}.vbs"
+    if vbs.exists():
+        vbs.unlink()
+        ok(f"removed {vbs}")
     # Best-effort kill any running daemon. WMIC is deprecated on Win11 but still
     # available; fall back to taskkill image-name otherwise.
     subprocess.run(
@@ -215,9 +212,9 @@ def install_linux() -> None:
     legacy_unit = unit_dir / f"{LEGACY_LABEL}.service"
     log = DATA_DIR / "daemon.log"
     if legacy_unit.exists():
-        subprocess.run(["systemctl", "--user", "disable", "--now", f"{LEGACY_LABEL}.service"], check=False)
+        subprocess.run(["systemctl", "--user", "disable", "--now", f"{LEGACY_LABEL}.service"],
+                       check=False, stderr=subprocess.DEVNULL)
         legacy_unit.unlink()
-        ok(f"removed legacy systemd unit -> {legacy_unit}")
     unit.write_text(
         f"""[Unit]
 Description={APP_NAME} daemon
@@ -266,9 +263,12 @@ def verify() -> bool:
     return False
 
 
-def _hook_command(osname: str) -> str:
+def _hook_command(osname: str, agent: str) -> str:
     hook_path = PROJECT_DIR / ("hook.cmd" if osname == "Windows" else "hook.sh")
-    return str(hook_path).replace("\\", "\\\\")
+    if osname == "Windows":
+        cmd = f'"{hook_path}" {agent}'
+        return cmd.replace("\\", "\\\\")
+    return f"{shlex.quote(str(hook_path))} {agent}"
 
 
 def _command_hook(cmd: str, *, codex: bool = False) -> dict:
@@ -286,64 +286,150 @@ def _hook_group(cmd: str, matcher: str | None = None, *, codex: bool = False) ->
     return group
 
 
+def _hook_path(osname: str) -> Path:
+    return PROJECT_DIR / ("hook.cmd" if osname == "Windows" else "hook.sh")
+
+
+def _is_ours(cmd: str) -> bool:
+    """A hook command is ours iff it points at this checkout's hook script."""
+    return str(_hook_path("Windows")) in (cmd or "") or str(_hook_path("Linux")) in (cmd or "")
+
+
+def _build_claude_hooks(osname: str) -> dict:
+    cmd = _hook_command(osname, "claude")
+    return {
+        "SessionStart":     [_hook_group(cmd)],
+        "SessionEnd":       [_hook_group(cmd)],
+        "UserPromptSubmit": [_hook_group(cmd)],
+        "Stop":             [_hook_group(cmd)],
+        "StopFailure":      [_hook_group(cmd)],
+        "Elicitation":      [_hook_group(cmd)],
+        "Notification":     [_hook_group(cmd, "permission_prompt|elicitation_dialog")],
+        "PreToolUse":       [_hook_group(cmd, "AskUserQuestion")],
+        "PostToolUse":      [_hook_group(cmd, "AskUserQuestion")],
+    }
+
+
+def _codex_hooks_toml(osname: str) -> str:
+    cmd = _hook_command(osname, "codex")
+    qcmd = json.dumps(cmd)
+    handler = f'{{ type = "command", command = {qcmd}, timeout = 5, statusMessage = "Updating signal light" }}'
+    return f"""# agent-signal-light hooks (auto-installed)
+[features]
+hooks = true
+codex_hooks = true  # older Codex CLI builds
+
+[hooks]
+SessionStart    = [{{ matcher = "startup|resume|clear|compact", hooks = [{handler}] }}]
+UserPromptSubmit = [{{ hooks = [{handler}] }}]
+PreToolUse        = [{{ hooks = [{handler}] }}]
+PermissionRequest = [{{ hooks = [{handler}] }}]
+PostToolUse       = [{{ hooks = [{handler}] }}]
+PreCompact        = [{{ matcher = "manual|auto", hooks = [{handler}] }}]
+PostCompact       = [{{ matcher = "manual|auto", hooks = [{handler}] }}]
+SubagentStart     = [{{ hooks = [{handler}] }}]
+SubagentStop      = [{{ hooks = [{handler}] }}]
+Stop              = [{{ hooks = [{handler}] }}]
+StopFailure       = [{{ hooks = [{handler}] }}]
+"""
+
+
+def install_claude_hooks(osname: str) -> None:
+    """Merge our hook entries into ~/.claude/settings.json, preserving other config.
+
+    For each event we own, drop any pre-existing group whose first hook command
+    fingerprints as ours, then append our group. Idempotent.
+    """
+    settings = Path.home() / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    if settings.exists():
+        try:
+            data = json.loads(settings.read_text() or "{}")
+            if not isinstance(data, dict):
+                raise ValueError("not a JSON object")
+        except (ValueError, json.JSONDecodeError) as e:
+            warn(f"Claude settings.json is not valid JSON ({e}); printing snippet instead")
+            print_claude_hooks_snippet(osname)
+            return
+        settings.with_suffix(".json.bak").write_text(json.dumps(data, indent=2))
+    else:
+        data = {}
+
+    hooks_root = data.setdefault("hooks", {})
+    if not isinstance(hooks_root, dict):
+        warn('"hooks" in settings.json is not an object; printing snippet instead')
+        print_claude_hooks_snippet(osname)
+        return
+
+    our_hooks = _build_claude_hooks(osname)
+    for event, our_groups in our_hooks.items():
+        existing = hooks_root.get(event)
+        if not isinstance(existing, list):
+            existing = []
+        kept = []
+        for group in existing:
+            try:
+                first_cmd = (group.get("hooks") or [{}])[0].get("command", "")
+            except (AttributeError, TypeError, IndexError):
+                first_cmd = ""
+            if not _is_ours(first_cmd):
+                kept.append(group)
+        hooks_root[event] = kept + our_groups
+
+    settings.write_text(json.dumps(data, indent=2) + "\n")
+    ok(f"merged Claude hooks -> {settings}")
+
+
+def install_codex_hooks(osname: str) -> None:
+    """Append our [features]/[hooks] block to ~/.codex/config.toml when it's safe.
+
+    TOML is tricky to rewrite in place without a writer library, so we only touch
+    the file when there's no existing [features] or [hooks] table to clobber.
+    Anything else falls back to the printable snippet.
+    """
+    config_path = Path.home() / ".codex" / "config.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    snippet = _codex_hooks_toml(osname)
+
+    if not config_path.exists():
+        config_path.write_text(snippet)
+        ok(f"wrote Codex hooks -> {config_path}")
+        return
+
+    existing = config_path.read_text()
+    if str(_hook_path(osname)) in existing:
+        ok(f"Codex hooks already present in {config_path}")
+        return
+    if "[hooks]" in existing or "[features]" in existing:
+        warn("Codex config already defines [hooks]/[features]; printing snippet for manual merge")
+        print_codex_hooks_snippet(osname)
+        return
+
+    config_path.with_suffix(".toml.bak").write_text(existing)
+    suffix = "" if existing.endswith("\n") else "\n"
+    config_path.write_text(existing + suffix + "\n" + snippet)
+    ok(f"appended Codex hooks -> {config_path}")
+
+
 def print_claude_hooks_snippet(osname: str) -> None:
-    hook_path = PROJECT_DIR / ("hook.cmd" if osname == "Windows" else "hook.sh")
     settings = Path.home() / ".claude" / "settings.json"
     print()
-    info("Wire Claude Code hooks (one-time):")
-    print(f"   Edit {settings}")
-    print(f"   Add (or merge) the following \"hooks\" block — command points to:")
-    print(f"     {hook_path}")
+    info(f"Merge the following into {settings}:")
     print()
-    cmd = _hook_command(osname)
-    hooks = {
-        "SessionStart": [_hook_group(cmd)],
-        "SessionEnd": [_hook_group(cmd)],
-        "UserPromptSubmit": [_hook_group(cmd)],
-        "Stop": [_hook_group(cmd)],
-        "StopFailure": [_hook_group(cmd)],
-        "Elicitation": [_hook_group(cmd)],
-        "Notification": [_hook_group(cmd, "permission_prompt|elicitation_dialog")],
-        "PreToolUse": [_hook_group(cmd, "AskUserQuestion")],
-        "PostToolUse": [_hook_group(cmd, "AskUserQuestion")],
-    }
-    print(json.dumps({"hooks": hooks}, indent=2))
+    print(json.dumps({"hooks": _build_claude_hooks(osname)}, indent=2))
 
 
 def print_codex_hooks_snippet(osname: str) -> None:
-    hooks_path = Path.home() / ".codex" / "hooks.json"
     config_path = Path.home() / ".codex" / "config.toml"
-    hook_path = PROJECT_DIR / ("hook.cmd" if osname == "Windows" else "hook.sh")
     print()
-    info("Wire Codex hooks (one-time):")
-    print(f"   Edit {hooks_path}")
-    print(f"   Add (or merge) the following JSON — command points to:")
-    print(f"     {hook_path}")
+    info(f"Merge the following into {config_path}:")
     print()
-    cmd = _hook_command(osname)
-    hooks = {
-        "SessionStart": [_hook_group(cmd, "startup|resume|clear|compact", codex=True)],
-        "UserPromptSubmit": [_hook_group(cmd, codex=True)],
-        "PreToolUse": [_hook_group(cmd, codex=True)],
-        "PermissionRequest": [_hook_group(cmd, codex=True)],
-        "PostToolUse": [_hook_group(cmd, codex=True)],
-        "PreCompact": [_hook_group(cmd, "manual|auto", codex=True)],
-        "PostCompact": [_hook_group(cmd, "manual|auto", codex=True)],
-        "SubagentStart": [_hook_group(cmd, codex=True)],
-        "SubagentStop": [_hook_group(cmd, codex=True)],
-        "Stop": [_hook_group(cmd, codex=True)],
-    }
-    print(json.dumps({"hooks": hooks}, indent=2))
-    print()
-    print(f"   Then ensure hooks are enabled in {config_path}:")
-    print("""[features]
-hooks = true
-codex_hooks = true  # older Codex CLI builds""")
+    print(_codex_hooks_toml(osname))
 
 
-def print_hooks_snippets(osname: str) -> None:
-    print_claude_hooks_snippet(osname)
-    print_codex_hooks_snippet(osname)
+def install_hooks(osname: str) -> None:
+    install_claude_hooks(osname)
+    install_codex_hooks(osname)
 
 
 def main() -> None:
@@ -351,6 +437,8 @@ def main() -> None:
     ap.add_argument("--uninstall", action="store_true", help="remove auto-start")
     ap.add_argument("--purge", action="store_true",
                     help=f"with --uninstall, also delete ~/.{APP_SLUG}/")
+    ap.add_argument("--no-hooks", action="store_true",
+                    help="don't touch ~/.claude/settings.json or ~/.codex/config.toml")
     args = ap.parse_args()
 
     osname = platform.system()
@@ -380,7 +468,12 @@ def main() -> None:
     else:                     install_linux()
 
     if verify():
-        print_hooks_snippets(osname)
+        if args.no_hooks:
+            info("skipping agent hook auto-install (--no-hooks)")
+            print_claude_hooks_snippet(osname)
+            print_codex_hooks_snippet(osname)
+        else:
+            install_hooks(osname)
 
 
 if __name__ == "__main__":

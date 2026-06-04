@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "effects": [
     {
       "id": "idle_green",
@@ -73,6 +73,8 @@
     "Notification",
     "Elicitation",
     "PreToolUse:AskUserQuestion",
+    "Stop",
+    "SessionStart",
     "PostToolUse:AskUserQuestion",
     "UserPromptSubmit",
     "PreToolUse",
@@ -80,8 +82,42 @@
     "PreCompact",
     "PostCompact",
     "SubagentStart",
-    "SubagentStop",
-    "SessionStart",
-    "Stop"
-  ]
+    "SubagentStop"
+  ],
+  "agent_priority": {
+    "claude": [
+      "StopFailure",
+      "PermissionRequest",
+      "Notification",
+      "Elicitation",
+      "PreToolUse:AskUserQuestion",
+      "Stop",
+      "SessionStart",
+      "PostToolUse:AskUserQuestion",
+      "UserPromptSubmit",
+      "PreToolUse",
+      "PostToolUse",
+      "PreCompact",
+      "PostCompact",
+      "SubagentStart",
+      "SubagentStop"
+    ],
+    "codex": [
+      "StopFailure",
+      "PermissionRequest",
+      "Notification",
+      "Elicitation",
+      "PreToolUse:AskUserQuestion",
+      "Stop",
+      "SessionStart",
+      "PostToolUse:AskUserQuestion",
+      "UserPromptSubmit",
+      "PreToolUse",
+      "PostToolUse",
+      "PreCompact",
+      "PostCompact",
+      "SubagentStart",
+      "SubagentStop"
+    ]
+  }
 }
